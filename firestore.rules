@@ -1,0 +1,45 @@
+rules_version = '2';
+
+// Guests can only create a well-formed pending request and read back a request
+// by its id (to see its status). The laptop helper uses a service account,
+// which bypasses these rules.
+//
+// Note: `service` is a reserved word in rules, so the field is `platform`.
+// In the regexes, [.] is a literal dot and [^ ] is any non-space character.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isYoutube(url) {
+      return url.matches('https://(www[.]|m[.]|music[.])?(youtube[.]com|youtu[.]be)/[^ ]+');
+    }
+
+    function isAppleSong(url) {
+      return url.matches('https://music[.]apple[.]com/[^ ]*(/song/|[?&]i=[0-9]+)[^ ]*');
+    }
+
+    function validLink(data) {
+      return data.url is string
+        && data.url.size() <= 500
+        && ((data.platform == 'youtube' && isYoutube(data.url))
+            || (data.platform == 'apple' && isAppleSong(data.url)));
+    }
+
+    function validRequester(data) {
+      return !('requester' in data)
+        || (data.requester is string && data.requester.size() <= 40);
+    }
+
+    match /requests/{requestId} {
+      allow get: if true;
+      allow list, update, delete: if false;
+
+      allow create: if
+        request.resource.data.keys().hasOnly(['url', 'platform', 'requester', 'status', 'createdAt'])
+        && request.resource.data.keys().hasAll(['url', 'platform', 'status', 'createdAt'])
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && validLink(request.resource.data)
+        && validRequester(request.resource.data);
+    }
+  }
+}

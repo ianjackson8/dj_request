@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Request a Song</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { max-width: 32rem; margin: 0 auto; padding: 2rem 1rem; }
+    form { display: grid; gap: 0.75rem; }
+    input, button { font: inherit; padding: 0.75rem; border-radius: 0.5rem; border: 1px solid #888; }
+    button { cursor: pointer; font-weight: 600; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    #status { min-height: 1.5rem; }
+    .error { color: #d33; }
+    .ok { color: #2a2; }
+  </style>
+</head>
+<body>
+  <h1>Request a song</h1>
+  <p>Paste a YouTube or Apple Music link.</p>
+  <form id="request-form">
+    <input id="url" type="url" placeholder="https://…" required autocomplete="off">
+    <input id="requester" type="text" placeholder="Your name (optional)" maxlength="40">
+    <button id="submit" type="submit">Send to DJ</button>
+  </form>
+  <p id="status" role="status"></p>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

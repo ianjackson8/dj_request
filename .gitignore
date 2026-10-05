@@ -1,0 +1,8 @@
+# Firebase service account key: never commit
+helper/service-account.json
+*.json.key
+
+.venv/
+__pycache__/
+cookies.txt
+.DS_Store
