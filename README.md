@@ -85,3 +85,17 @@ Test a download without Firebase:
 ```sh
 .venv/bin/python helper/dj_helper.py ~/Music/Requests --test "https://youtu.be/…"
 ```
+
+## Deploying site changes
+
+GitHub Pages lets browsers cache files for 10 minutes, and that can't be
+changed. To make sure guests get new code right away, stamp a new version
+before committing changes to `docs/`:
+
+```sh
+./scripts/stamp-version.sh
+```
+
+This updates the `?v=` on every asset link and writes `docs/version.json`.
+Open pages check that file every minute, and whenever the tab comes back into
+view, and reload themselves onto the new version.

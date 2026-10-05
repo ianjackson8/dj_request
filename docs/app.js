@@ -6,7 +6,10 @@ import {
 import {
   getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { firebaseConfig } from "./firebase-config.js";
+import { firebaseConfig } from "./firebase-config.js?v=20261004213751";
+
+// Stamped by scripts/stamp-version.sh; must match docs/version.json when deployed.
+const APP_VERSION = "20261004213751";
 
 // Typing this into the link field opens the control tower. It only reveals the
 // panel; actually using it requires a Google account with the admin claim.
@@ -43,6 +46,28 @@ const launchJet = document.querySelector(".launch-jet");
 
 let accepting = true;
 let unsubscribeRequest = null;
+
+// ---------- Stay up to date ----------
+// GitHub Pages lets browsers cache files for 10 minutes, so a tab (or a cached
+// copy of the page) can be running old code after a deploy. Check the live
+// version and reload onto it when it changes.
+
+const params = new URLSearchParams(location.search);
+if (params.has("v")) history.replaceState(null, "", location.pathname + location.hash);
+
+async function checkForUpdate() {
+  try {
+    const res = await fetch(`version.json?t=${Date.now()}`, { cache: "no-store" });
+    const { version } = await res.json();
+    const busy = urlInput.value.trim() !== "" || !tower.hidden;
+    // The ?v= guard stops a reload loop if the CDN is still serving old files.
+    if (version && version !== APP_VERSION && !busy && params.get("v") !== version) {
+      location.replace(`${location.pathname}?v=${version}`);
+    }
+  } catch {
+    // Offline or version.json missing; try again next time.
+  }
+}
 
 // ---------- Guest form ----------
 
@@ -131,6 +156,12 @@ onSnapshot(stateRef, (snap) => {
 
 const guest = $("guest");
 const tower = $("tower");
+
+checkForUpdate();
+setInterval(checkForUpdate, 60_000);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") checkForUpdate();
+});
 const towerMsg = $("tower-msg");
 let unsubscribeBoard = null;
 
