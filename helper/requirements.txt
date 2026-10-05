@@ -1,1 +1,2 @@
 firebase-admin>=7.0
+spotdl>=4.2

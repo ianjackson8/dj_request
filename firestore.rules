@@ -21,19 +21,19 @@ service cloud.firestore {
         || get(/databases/$(database)/documents/config/state).data.accepting == true;
     }
 
-    function isYoutube(url) {
-      return url.matches('https://(www[.]|m[.]|music[.])?(youtube[.]com|youtu[.]be)/[^ ]+');
-    }
-
-    function isAppleSong(url) {
-      return url.matches('https://music[.]apple[.]com/[^ ]*(/song/|[?&]i=[0-9]+)[^ ]*');
-    }
-
+    // Only checks the link is from a supported service. Whether it's a single
+    // song (not a playlist) is decided by the laptop helper.
     function validLink(data) {
       return data.url is string
         && data.url.size() <= 500
-        && ((data.platform == 'youtube' && isYoutube(data.url))
-            || (data.platform == 'apple' && isAppleSong(data.url)));
+        && ((data.platform == 'youtube'
+              && data.url.matches('https://(www[.]|m[.]|music[.])?(youtube[.]com|youtu[.]be)/[^ ]+'))
+            || (data.platform == 'apple'
+              && data.url.matches('https://music[.]apple[.]com/[^ ]+'))
+            || (data.platform == 'soundcloud'
+              && data.url.matches('https://(www[.]|m[.]|on[.])?soundcloud[.]com/[^ ]+'))
+            || (data.platform == 'spotify'
+              && data.url.matches('https://(open[.]spotify[.]com|spotify[.]link)/[^ ]+')));
     }
 
     function validRequester(data) {

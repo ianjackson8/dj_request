@@ -16,10 +16,19 @@ Each request moves through `pending → downloading → done | failed`, and the
 guest's page shows the status live as a flight tracker (Tower → In flight → Landed).
 Each finished download also pops up a macOS notification with the song and who asked for it.
 
-| Service      | CLI      | Accepted links                                   |
-|--------------|----------|--------------------------------------------------|
-| YouTube      | `yt-dlp` | youtube.com, youtu.be, music.youtube.com         |
-| Apple Music  | `gamdl`  | single songs: `/song/…` or album links with `?i=` |
+| Service      | How it's downloaded | Single-song links accepted |
+|--------------|---------------------|----------------------------|
+| YouTube      | `yt-dlp` | `watch?v=`, `youtu.be/`, `shorts/`, music.youtube.com |
+| SoundCloud   | `yt-dlp` | `soundcloud.com/<artist>/<track>`, `on.soundcloud.com` share links |
+| Apple Music  | `gamdl`  | `/song/…` or album links with `?i=` |
+| Spotify      | matched to Apple Music by title, artist and length (±3s) and downloaded with `gamdl`; falls back to `spotDL` (YouTube audio) if there's no match | `/track/…`, `spotify.link` share links |
+
+**Playlist protection** is in the helper only. Playlists, albums, sets, and
+artist/profile pages are refused, short share links are expanded before the
+check, and a request that would produce more than one track is refused.
+
+SoundCloud Go+ tracks only offer a 30-second preview. The helper refuses
+these instead of saving a clip.
 
 ## One-time setup
 

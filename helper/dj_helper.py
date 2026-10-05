@@ -2,7 +2,7 @@
 """DJ request helper.
 
 Listens to the Firestore `requests` collection for new song links, downloads
-them with the right CLI for the service, converts to AIFF, and drops the
+them with the right CLI for the platform, converts to AIFF, and drops the
 result into the output folder.
 
     python dj_helper.py ~/Music/Requests
@@ -14,14 +14,18 @@ While running, type p + Enter to pause requests, r to resume, s for status.
 
 import argparse
 import json
+from html import unescape
 import logging
 import os
 import queue
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import threading
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 # Quiet gRPC's harmless fork() warnings when we shell out to the downloaders.
@@ -34,34 +38,100 @@ STATE_DOC = ("config", "state")  # {accepting: bool}; guests can only submit whi
 DOWNLOAD_TIMEOUT_S = 300
 AUDIO_EXTS = {".m4a", ".mp3", ".opus", ".ogg", ".webm", ".flac", ".wav", ".aac", ".mp4"}
 
-# Keep in sync with docs/app.js and firestore.rules.
-SERVICES = {
-    "youtube": re.compile(r"^https://(www\.|m\.|music\.)?(youtube\.com|youtu\.be)/\S+$"),
-    # Single songs only: /song/... or an album link pointing at one track (?i=...).
+APPLE_STOREFRONT = "us"  # must match the country of the Apple Music account in cookies.txt
+
+# Single-song links only. The page and firestore.rules only check the domain;
+# this is the one place that decides what counts as a single song.
+SONG_LINKS = {
+    "youtube": re.compile(
+        r"^https://((www\.|m\.|music\.)?youtube\.com/(watch\?\S*\bv=[\w-]+\S*|(shorts|live)/[\w-]+([?#]\S*)?)"
+        r"|youtu\.be/[\w-]+([?#]\S*)?)$"),
+    # /song/... or an album link pointing at one track (?i=...).
     "apple": re.compile(r"^https://music\.apple\.com/\S*(/song/|[?&]i=\d+)\S*$"),
+    # soundcloud.com/<artist>/<track>, optionally a private /s-xxxx share token.
+    "soundcloud": re.compile(
+        r"^https://(www\.|m\.)?soundcloud\.com/[^\s/?#]+/"
+        r"(?!(sets|likes|tracks|reposts|albums|popular-tracks|followers|following|comments|spotlight|toptracks)([/?#]|$))"
+        r"[^\s/?#]+(/s-[A-Za-z0-9]+)?/?([?#]\S*)?$"),
+    "spotify": re.compile(r"^https://open\.spotify\.com/(intl-[a-z-]+/)?track/[A-Za-z0-9]+/?([?#]\S*)?$"),
 }
 
+# App share links that redirect somewhere else; we expand them before deciding.
+SHORT_LINKS = re.compile(r"^https://(on\.soundcloud\.com|spotify\.link)/[A-Za-z0-9]+/?$")
 
-def detect_service(url: str) -> str | None:
-    for name, pattern in SERVICES.items():
+# Recognisable multi-track links, so guests get a clear "no playlists" message.
+PLAYLIST_LINKS = re.compile(
+    r"youtube\.com/(playlist|@|channel/|c/|user/)"
+    r"|music\.apple\.com/\S*/(album|playlist|artist|curator|station)/"
+    r"|soundcloud\.com/[^\s/?#]+(/(sets|likes|tracks|reposts|albums|popular-tracks|toptracks|spotlight)\b|/?$)"
+    r"|open\.spotify\.com/(intl-[a-z-]+/)?(album|playlist|artist|show|episode|user)/")
+
+
+class RejectedLink(ValueError):
+    """A link refused on purpose. `reason` is shown to the guest."""
+
+    def __init__(self, reason: str, message: str):
+        super().__init__(message)
+        self.reason = reason
+
+
+def classify(url: str) -> str:
+    for name, pattern in SONG_LINKS.items():
         if pattern.match(url):
             return name
-    return None
+    if PLAYLIST_LINKS.search(url):
+        raise RejectedLink("playlist", "playlists, albums and profiles aren't allowed, one song per request")
+    raise RejectedLink("unsupported", f"unsupported link: {url}")
+
+
+def http_get(url: str, timeout: int = 15) -> tuple[str, str]:
+    """Return (final URL after redirects, body)."""
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh)"})
+    with urllib.request.urlopen(req, timeout=timeout) as res:
+        return res.geturl(), res.read(500_000).decode("utf-8", "replace")
+
+
+def expand_short_link(url: str) -> str:
+    final, body = http_get(url)
+    if not SHORT_LINKS.match(final):
+        return final
+    # Some short links redirect with JavaScript; take the target from the page.
+    found = re.search(r"https://(open\.spotify\.com|(www\.)?soundcloud\.com)/[^\s\"'<>\\]+", body)
+    if not found:
+        raise RejectedLink("unsupported", f"couldn't expand short link: {url}")
+    return found.group(0)
+
+
+def resolve_link(url: str) -> tuple[str, str]:
+    """Return (platform, url) for a single-song link, or raise RejectedLink."""
+    if SHORT_LINKS.match(url):
+        expanded = expand_short_link(url)
+        log.info("  expanded %s -> %s", url, expanded)
+        url = expanded
+    return classify(url), url
 
 
 # --- downloaders -------------------------------------------------------------
 
-def download_youtube(url: str, workdir: Path) -> None:
-    run([
-        "yt-dlp",
-        "--no-playlist",
-        "-f", "bestaudio",
-        "-x",
-        "--embed-metadata",
-        "--embed-thumbnail",
-        "-o", str(workdir / "%(title)s.%(ext)s"),
-        url,
-    ])
+def download_ytdlp(url: str, workdir: Path) -> None:
+    """YouTube and SoundCloud."""
+    try:
+        run([
+            "yt-dlp",
+            "--no-playlist",
+            "--playlist-items", "1",  # belt and braces: never more than one track
+            # SoundCloud Go+ tracks only expose 30s previews; never hand the DJ a clip.
+            "-f", "bestaudio[format_id!*=preview]",
+            "-x",
+            "--embed-metadata",
+            "--embed-thumbnail",
+            "-o", str(workdir / "%(title)s.%(ext)s"),
+            url,
+        ])
+    except RuntimeError as exc:
+        if "Requested format is not available" in str(exc):
+            raise RuntimeError("only a 30-second preview is available (SoundCloud Go+ track)") from exc
+        raise
 
 
 def download_apple(url: str, workdir: Path, cookies: Path | None) -> None:
@@ -69,6 +139,65 @@ def download_apple(url: str, workdir: Path, cookies: Path | None) -> None:
     if cookies:
         cmd += ["-c", str(cookies)]
     run(cmd + [url])
+
+
+def spotify_track_info(url: str) -> dict:
+    """Title, artist and duration from the public Spotify track page's meta tags."""
+    _, html = http_get(url)
+
+    def meta(key: str) -> str | None:
+        m = re.search(rf'<meta (?:property|name)="{re.escape(key)}" content="([^"]*)"', html)
+        return unescape(m.group(1)) if m else None
+
+    title, artist, duration = meta("og:title"), meta("music:musician_description"), meta("music:duration")
+    if not (title and artist and duration):
+        raise RuntimeError("couldn't read track details from the Spotify page")
+    return {"title": title, "artist": artist, "duration": int(duration)}
+
+
+def base_title(title: str) -> str:
+    """'Song - Remastered 2011' / 'Song (feat. X)' -> 'song', for comparing across services."""
+    title = re.sub(r"\s[-–]\s.*$", "", title)
+    title = re.sub(r"[(\[].*?[)\]]", "", title)
+    return re.sub(r"[^a-z0-9]", "", title.lower().replace("&", "and"))
+
+
+def spotify_to_apple(url: str) -> str | None:
+    """Find the same recording on Apple Music: same base title, artist and length (±3s)."""
+    info = spotify_track_info(url)
+    query = urllib.parse.urlencode({"term": f"{info['artist']} {info['title']}", "entity": "song",
+                                    "limit": 25, "country": APPLE_STOREFRONT})
+    _, body = http_get(f"https://itunes.apple.com/search?{query}")
+    want_title = base_title(info["title"])
+    want_artist = re.sub(r"[^a-z0-9]", "", info["artist"].lower())
+    for r in json.loads(body).get("results", []):
+        artist = re.sub(r"[^a-z0-9]", "", r.get("artistName", "").lower())
+        if (base_title(r.get("trackName", "")) == want_title
+                and (want_artist in artist or artist in want_artist)
+                and abs(r.get("trackTimeMillis", 0) / 1000 - info["duration"]) <= 3):
+            log.info("  matched %s - %s on apple music", r["artistName"], r["trackName"])
+            return f"https://music.apple.com/{APPLE_STOREFRONT}/song/{r['trackId']}"
+    return None
+
+
+def download_spotify(url: str, workdir: Path, cookies: Path | None) -> None:
+    """Spotify audio is DRM'd, so grab the same song from Apple Music, else YouTube via spotDL."""
+    try:
+        apple_url = spotify_to_apple(url)
+    except Exception as exc:  # noqa: BLE001 - a failed lookup just means using the fallback
+        log.warning("  apple music lookup failed: %s", exc)
+        apple_url = None
+    if apple_url:
+        log.info("  spotify -> apple music %s", apple_url)
+        try:
+            download_apple(apple_url, workdir, cookies)
+            return
+        except RuntimeError as exc:
+            log.warning("  apple music download failed, falling back to spotDL: %s", exc)
+    else:
+        log.info("  not on apple music, falling back to spotDL")
+    spotdl = shutil.which("spotdl") or str(Path(sys.executable).parent / "spotdl")
+    run([spotdl, "download", url, "--output", str(workdir / "{artists} - {title}.{output-ext}")])
 
 
 def run(cmd: list[str]) -> None:
@@ -128,23 +257,26 @@ def unique_path(path: Path) -> Path:
 
 
 def fetch(url: str, out_dir: Path, cookies: Path | None) -> list[Path]:
-    """Download one link and return the AIFF files written to out_dir."""
-    service = detect_service(url)
-    if service is None:
-        raise ValueError(f"unsupported link: {url}")
+    """Download one song link and return the AIFF file written to out_dir."""
+    platform, url = resolve_link(url)
 
     with tempfile.TemporaryDirectory(prefix="djreq-") as tmp:
         workdir = Path(tmp)
-        if service == "youtube":
-            download_youtube(url, workdir)
-        elif service == "apple":
+        if platform in ("youtube", "soundcloud"):
+            download_ytdlp(url, workdir)
+        elif platform == "apple":
             download_apple(url, workdir, cookies)
+        elif platform == "spotify":
+            download_spotify(url, workdir, cookies)
 
         sources = [p for p in workdir.rglob("*")
                    if p.suffix.lower() in AUDIO_EXTS and ".gamdl-tmp" not in p.parts]
         if not sources:
             raise RuntimeError("downloader finished but produced no audio file")
-        return [to_aiff(src, out_dir) for src in sources]
+        if len(sources) > 1:
+            # Should be impossible after the link checks; refuse rather than flood the crate.
+            raise RejectedLink("playlist", f"link produced {len(sources)} tracks, one song per request")
+        return [to_aiff(sources[0], out_dir)]
 
 
 # --- notifications -----------------------------------------------------------
@@ -263,6 +395,10 @@ def listen(out_dir: Path, credentials_path: Path, cookies: Path | None,
                                   "startedAt": firestore.SERVER_TIMESTAMP})
             try:
                 files = fetch(url, out_dir, cookies)
+            except RejectedLink as exc:
+                log.warning("⛔ %s: %s", url, exc)
+                doc.reference.update({"status": "failed", "reason": exc.reason, "error": str(exc),
+                                      "finishedAt": firestore.SERVER_TIMESTAMP})
             except Exception as exc:  # noqa: BLE001 - report every failure to the guest
                 log.error("✗ %s: %s", url, exc)
                 doc.reference.update({"status": "failed", "error": str(exc)[:500],
@@ -317,8 +453,11 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if args.test:
-        for f in fetch(args.test, out_dir, args.cookies):
-            print(f)
+        try:
+            for f in fetch(args.test, out_dir, args.cookies):
+                print(f)
+        except RejectedLink as exc:
+            sys.exit(f"rejected ({exc.reason}): {exc}")
         return
 
     if not args.credentials.exists():

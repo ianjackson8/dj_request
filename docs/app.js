@@ -6,10 +6,10 @@ import {
 import {
   getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { firebaseConfig } from "./firebase-config.js?v=20261004213751";
+import { firebaseConfig } from "./firebase-config.js?v=20261004215552";
 
 // Stamped by scripts/stamp-version.sh; must match docs/version.json when deployed.
-const APP_VERSION = "20261004213751";
+const APP_VERSION = "20261004215552";
 
 // Typing this into the link field opens the control tower. It only reveals the
 // panel; actually using it requires a Google account with the admin claim.
@@ -20,10 +20,13 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 const stateRef = doc(db, "config", "state");
 
-// Keep in sync with helper/dj_helper.py and firestore.rules.
+// Which service a link is from. Keep in sync with firestore.rules; the helper
+// decides whether it's a single song.
 const PLATFORMS = {
   youtube: /^https:\/\/(www\.|m\.|music\.)?(youtube\.com|youtu\.be)\/\S+$/,
-  apple: /^https:\/\/music\.apple\.com\/\S*(\/song\/|[?&]i=\d+)\S*$/,
+  apple: /^https:\/\/music\.apple\.com\/\S+$/,
+  soundcloud: /^https:\/\/(www\.|m\.|on\.)?soundcloud\.com\/\S+$/,
+  spotify: /^https:\/\/(open\.spotify\.com|spotify\.link)\/\S+$/,
 };
 
 const STATUS = {
@@ -110,7 +113,7 @@ form.addEventListener("submit", async (event) => {
   }
   const platform = detectPlatform(url);
   if (!platform) {
-    setStatus("That flight plan won't fly. Use a YouTube or Apple Music song link.", "error");
+    setStatus("That flight plan won't fly. Use a YouTube, Spotify, Apple Music or SoundCloud link.", "error");
     return;
   }
 
