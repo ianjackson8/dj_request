@@ -1,0 +1,296 @@
+:root {
+  color-scheme: dark;
+  --sky-top: #060d22;
+  --sky-mid: #0e2350;
+  --sky-low: #3b2a5c;
+  --horizon: #e0794a;
+  --navy: #0a1633;
+  --blue: #1b3f8b;
+  --gold: #f5b700;
+  --gold-deep: #c99400;
+  --golden-gate: #c0362c;
+  --paper: #f6f1e4;
+  --paper-ink: #13213f;
+  --paper-muted: #6b7591;
+  --ink: #f2f5fc;
+  --muted: #a7b3d1;
+  --ok: #2f9e5b;
+  --error: #d6453d;
+  --display: "Oswald", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; min-height: 100%; }
+
+body {
+  min-height: 100dvh;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: var(--ink);
+  background: linear-gradient(180deg, var(--sky-top) 0%, var(--sky-mid) 45%, var(--sky-low) 75%, var(--horizon) 100%);
+  background-attachment: fixed;
+  overflow-x: hidden;
+}
+
+/* ---------- Sky scene ---------- */
+
+.sky { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+
+.stars {
+  position: absolute; inset: 0 0 50% 0;
+  background-image:
+    radial-gradient(1px 1px at 12% 18%, #fff9 50%, transparent),
+    radial-gradient(1px 1px at 28% 8%, #fff7 50%, transparent),
+    radial-gradient(1.5px 1.5px at 44% 26%, #fffa 50%, transparent),
+    radial-gradient(1px 1px at 63% 12%, #fff8 50%, transparent),
+    radial-gradient(1px 1px at 78% 30%, #fff6 50%, transparent),
+    radial-gradient(1.5px 1.5px at 90% 6%, #fff9 50%, transparent),
+    radial-gradient(1px 1px at 6% 40%, #fff5 50%, transparent),
+    radial-gradient(1px 1px at 52% 44%, #fff4 50%, transparent);
+}
+
+.formation {
+  /* Fly in the open sky just above the bridge (bridge height = width * 0.14). */
+  position: absolute; bottom: calc(max(100vw, 700px) * 0.14 + 50px); left: 0;
+  width: 150px; height: 70px;
+  animation: flyby 22s linear infinite;
+  animation-delay: 2s;
+  transform: translateX(-200px);
+}
+
+.plane { position: absolute; width: 34px; height: 17px; }
+.plane .jet { position: relative; display: block; width: 100%; height: 100%; fill: #dfe7f7; }
+.formation .lead  { left: 96px; top: 26px; }
+.formation .left  { left: 62px; top: 4px; }
+.formation .right { left: 62px; top: 48px; }
+.formation .slot  { left: 28px; top: 26px; }
+
+/* Smoke trail: starts at the jet's tail (left edge) and fades out behind it. */
+.trail {
+  position: absolute; right: calc(100% - 3px); top: 50%;
+  width: 55vw; height: 3px; transform: translateY(-50%);
+  background: linear-gradient(90deg, transparent, #ffffff66);
+  border-radius: 2px;
+}
+/* The lead's smoke would run straight through the slot jet, so keep it short. */
+.trail.short { width: 30px; }
+
+@keyframes flyby {
+  0%   { transform: translateX(-200px); }
+  55%  { transform: translateX(calc(100vw + 60vw)); }
+  100% { transform: translateX(calc(100vw + 60vw)); }
+}
+
+.bridge {
+  position: absolute; bottom: 0; left: 50%;
+  width: max(100%, 700px); aspect-ratio: 1000 / 140;
+  transform: translateX(-50%);
+}
+.bridge .tower { fill: var(--golden-gate); }
+.bridge .deck { fill: var(--golden-gate); }
+.bridge .cable, .bridge .hangers { fill: none; stroke: var(--golden-gate); }
+.bridge .cable { stroke-width: 2.5; }
+.bridge .hangers { stroke-width: 0.8; opacity: 0.8; }
+.bridge .water { fill: #0b1a3a; opacity: 0.85; }
+
+.launch-jet {
+  position: fixed; left: -60px; bottom: 30vh; z-index: 3;
+  width: 56px; height: 28px; fill: var(--gold);
+  opacity: 0; pointer-events: none;
+}
+.launch-jet.go { animation: takeoff 1.6s cubic-bezier(.5, 0, .7, 1) forwards; }
+
+@keyframes takeoff {
+  0%   { opacity: 1; transform: translate(0, 0) rotate(-8deg) scale(.8); }
+  100% { opacity: 1; transform: translate(calc(100vw + 120px), -60vh) rotate(-28deg) scale(1.4); }
+}
+
+/* ---------- Layout ---------- */
+
+main {
+  position: relative; z-index: 1;
+  max-width: 30rem; margin: 0 auto;
+  padding: max(2rem, env(safe-area-inset-top)) 16px 30vh;
+}
+
+.brand { text-align: center; margin-bottom: 1.5rem; }
+
+.eyebrow {
+  margin: 0 0 .5rem;
+  font: 500 .8rem/1 var(--mono);
+  letter-spacing: .2em; text-transform: uppercase;
+  color: var(--gold);
+}
+
+h1 {
+  margin: 0;
+  font: 700 clamp(2.4rem, 11vw, 3.4rem)/1 var(--display);
+  text-transform: uppercase; letter-spacing: .02em;
+}
+h1 span { color: var(--gold); }
+
+.lede { margin: .75rem 0 0; color: var(--muted); }
+
+/* ---------- Boarding pass ---------- */
+
+.ticket {
+  background: var(--paper);
+  color: var(--paper-ink);
+  border-radius: 14px;
+  box-shadow: 0 20px 50px #0008;
+  overflow: hidden;
+}
+
+.ticket-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: .8rem 1.1rem;
+  background: var(--blue);
+  color: var(--ink);
+  font: 700 .78rem/1 var(--mono);
+  letter-spacing: .15em; text-transform: uppercase;
+  border-bottom: 4px solid var(--gold);
+}
+.route { display: inline-flex; align-items: center; gap: .4rem; color: var(--gold); }
+.mini-jet { width: 18px; height: 9px; fill: currentColor; }
+
+form { display: grid; gap: 1rem; padding: 1.2rem 1.1rem 1.3rem; }
+
+label { display: grid; gap: .35rem; }
+
+.field-label {
+  font: 700 .78rem/1 var(--mono);
+  letter-spacing: .12em; text-transform: uppercase;
+}
+.field-label small {
+  font-weight: 500; letter-spacing: .02em; text-transform: none;
+  color: var(--paper-muted); margin-left: .35rem;
+}
+
+input {
+  font: 500 1rem var(--mono);
+  padding: .8rem .9rem;
+  border: 2px solid #d9d1bd; border-radius: 8px;
+  background: #fffdf7; color: var(--paper-ink);
+  width: 100%;
+}
+input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px #1b3f8b33; }
+
+button {
+  font: 700 1.05rem/1 var(--display);
+  letter-spacing: .08em; text-transform: uppercase;
+  padding: .95rem 1rem;
+  border: 0; border-radius: 8px;
+  background: var(--gold); color: var(--navy);
+  cursor: pointer;
+  box-shadow: 0 4px 0 var(--gold-deep);
+  transition: transform .08s, box-shadow .08s;
+}
+button:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--gold-deep); }
+button:disabled { opacity: .55; cursor: default; }
+
+form.closed button { background: #b9b3a3; box-shadow: 0 4px 0 #8f8a7c; color: #4a4f5e; }
+
+.closed-banner {
+  margin: 1rem 1.1rem 0;
+  padding: .75rem .9rem;
+  border-left: 4px solid var(--error);
+  background: #d6453d1a;
+  border-radius: 6px;
+}
+
+.perforation {
+  height: 0; margin: 0 .6rem;
+  border-top: 2px dashed #cfc6b0;
+  position: relative;
+}
+
+/* ---------- Flight tracker ---------- */
+
+.tracker { padding: 1.1rem 1.1rem 0; }
+
+.track {
+  position: relative; height: 22px; margin: 0 8px;
+  background: linear-gradient(var(--paper-muted), var(--paper-muted)) center / 100% 2px no-repeat;
+}
+.track-jet {
+  position: absolute; top: 2px; left: 0;
+  width: 36px; height: 18px; fill: var(--blue);
+  transform: translateX(-50%);
+  transition: left .8s ease;
+}
+.tracker[data-step="0"] .track-jet { left: 0%; }
+.tracker[data-step="1"] .track-jet { left: 50%; }
+.tracker[data-step="2"] .track-jet { left: 100%; fill: var(--ok); }
+.tracker.failed .track-jet { fill: var(--error); transform: translateX(-50%) rotate(25deg); }
+
+.stops {
+  display: flex; justify-content: space-between;
+  list-style: none; margin: .4rem 0 0; padding: 0;
+  font: 700 .7rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase;
+  color: var(--paper-muted);
+}
+
+.status { margin: 0; padding: 1rem 1.1rem 1.2rem; min-height: 1rem; font-weight: 600; }
+.status:empty { padding: .6rem; }
+.status.ok { color: var(--blue); }
+.status.error { color: var(--error); }
+
+/* ---------- Control tower ---------- */
+
+.tower-panel {
+  background: #0b1430ee;
+  border: 1px solid #2a3f73;
+  border-radius: 14px;
+  padding: 1.1rem;
+  box-shadow: 0 20px 50px #0008;
+}
+
+.tower-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+h2, h3 { margin: 0; font-family: var(--display); text-transform: uppercase; letter-spacing: .06em; }
+h2 { color: var(--gold); font-size: 1.6rem; }
+h3 { font-size: 1rem; margin: 1.4rem 0 .6rem; color: var(--muted); }
+
+.link {
+  background: none; box-shadow: none; padding: .4rem 0;
+  color: var(--muted); font: 600 .9rem system-ui, sans-serif;
+  text-transform: none; letter-spacing: 0;
+}
+.link:active { transform: none; box-shadow: none; }
+
+#tower-auth button { width: 100%; }
+.tower-msg { color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }
+.tower-msg code { font-family: var(--mono); color: var(--gold); }
+
+.airspace {
+  display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  padding: 1rem; border-radius: 10px;
+  background: #2f9e5b22; border: 1px solid var(--ok);
+}
+.airspace[data-open="false"] { background: #d6453d22; border-color: var(--error); }
+.airspace-label { display: block; font: 500 .7rem var(--mono); letter-spacing: .15em; text-transform: uppercase; color: var(--muted); }
+.airspace-state { font: 700 1.8rem/1 var(--display); color: var(--ok); }
+.airspace[data-open="false"] .airspace-state { color: var(--error); }
+
+.board-wrap { overflow-x: auto; border-radius: 8px; background: #050505; }
+.board {
+  width: 100%; border-collapse: collapse;
+  font: 500 .78rem var(--mono); color: var(--gold);
+}
+.board th {
+  text-align: left; padding: .55rem .6rem;
+  font-weight: 700; font-size: .66rem; letter-spacing: .12em; text-transform: uppercase;
+  color: #8a8a8a; border-bottom: 1px solid #222;
+}
+.board td { padding: .5rem .6rem; border-bottom: 1px solid #161616; vertical-align: top; }
+.board td.track-cell { max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #f2f2f2; }
+.board .st-done { color: #4cd685; }
+.board .st-failed { color: #ff6b61; }
+.board .st-downloading { color: #6fb6ff; }
+.board .empty { color: #777; text-align: center; padding: 1rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .formation { display: none; }
+  .launch-jet.go { animation: none; }
+  .track-jet { transition: none; }
+}

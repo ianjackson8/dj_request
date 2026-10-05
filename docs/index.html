@@ -2,29 +2,118 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Request a Song</title>
-  <style>
-    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-    body { max-width: 32rem; margin: 0 auto; padding: 2rem 1rem; }
-    form { display: grid; gap: 0.75rem; }
-    input, button { font: inherit; padding: 0.75rem; border-radius: 0.5rem; border: 1px solid #888; }
-    button { cursor: pointer; font-weight: 600; }
-    button:disabled { opacity: 0.5; cursor: default; }
-    #status { min-height: 1.5rem; }
-    .error { color: #d33; }
-    .ok { color: #2a2; }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a1633">
+  <title>Fleet Week Requests</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>Request a song</h1>
-  <p>Paste a YouTube or Apple Music link.</p>
-  <form id="request-form">
-    <input id="url" type="url" placeholder="https://…" required autocomplete="off">
-    <input id="requester" type="text" placeholder="Your name (optional)" maxlength="40">
-    <button id="submit" type="submit">Send to DJ</button>
-  </form>
-  <p id="status" role="status"></p>
+  <!-- Reusable jet silhouette, nose pointing right. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="jet" viewBox="0 0 48 24">
+      <path d="M48 12 L38 10.4 L28 10 L20 1 L15 1 L19 10 L8 10.4 L3 5 L0 5 L2 12 L0 19 L3 19 L8 13.6 L19 14 L15 23 L20 23 L28 14 L38 13.6 Z"/>
+    </symbol>
+  </svg>
+
+  <div class="sky" aria-hidden="true">
+    <div class="stars"></div>
+    <div class="formation">
+      <div class="plane lead"><span class="trail short"></span><svg class="jet"><use href="#jet"/></svg></div>
+      <div class="plane left"><span class="trail"></span><svg class="jet"><use href="#jet"/></svg></div>
+      <div class="plane right"><span class="trail"></span><svg class="jet"><use href="#jet"/></svg></div>
+      <div class="plane slot"><span class="trail"></span><svg class="jet"><use href="#jet"/></svg></div>
+    </div>
+    <svg class="bridge" viewBox="0 0 1000 140" preserveAspectRatio="xMidYMax meet">
+      <path class="hangers" d="M144 96V100 M170 90V100 M194 81V100 M215 70V100 M234 56V100 M275 51V100 M300 60V100 M325 69V100 M350 76V100 M375 82V100 M400 87V100 M425 91V100 M450 94V100 M475 95V100 M500 96V100 M525 95V100 M550 94V100 M575 91V100 M600 87V100 M625 82V100 M650 76V100 M675 69V100 M700 60V100 M725 51V100 M766 56V100 M785 70V100 M806 81V100 M830 90V100 M856 96V100"/>
+      <path class="cable" d="M115 100 Q205 92 250 40 Q500 152 750 40 Q795 92 885 100"/>
+      <path class="tower" d="M243 140 L245 34 L255 34 L257 140 Z"/>
+      <path class="tower" d="M743 140 L745 34 L755 34 L757 140 Z"/>
+      <rect class="deck" x="0" y="100" width="1000" height="5"/>
+      <rect class="water" x="0" y="116" width="1000" height="24"/>
+    </svg>
+  </div>
+
+  <svg class="launch-jet" aria-hidden="true"><use href="#jet"/></svg>
+
+  <main>
+    <header class="brand">
+      <p class="eyebrow">SF Fleet Week · DJ Control</p>
+      <h1>Request a <span>Song</span></h1>
+      <p class="lede">Paste a YouTube or Apple Music link and we'll get it airborne.</p>
+    </header>
+
+    <section id="guest" class="ticket">
+      <div class="ticket-head">
+        <span>Boarding pass</span>
+        <span class="route">CROWD <svg class="mini-jet"><use href="#jet"/></svg> DECKS</span>
+      </div>
+
+      <p id="closed-banner" class="closed-banner" hidden>
+        <strong>Airspace closed.</strong> The DJ isn't taking requests right now. Check back soon.
+      </p>
+
+      <form id="request-form" autocomplete="off">
+        <label>
+          <span class="field-label">Flight plan <small>song link</small></span>
+          <input id="url" type="text" inputmode="url" autocapitalize="off" spellcheck="false"
+                 placeholder="https://youtu.be/…" required>
+        </label>
+        <label>
+          <span class="field-label">Callsign <small>your name, optional</small></span>
+          <input id="requester" type="text" placeholder="Maverick" maxlength="40">
+        </label>
+        <button id="submit" type="submit">Cleared for takeoff</button>
+      </form>
+
+      <div class="perforation"></div>
+
+      <div id="tracker" class="tracker" data-step="0" hidden>
+        <div class="track"><svg class="track-jet"><use href="#jet"/></svg></div>
+        <ol class="stops">
+          <li>Tower</li>
+          <li>In flight</li>
+          <li>Landed</li>
+        </ol>
+      </div>
+      <p id="status" class="status" role="status"></p>
+    </section>
+
+    <section id="tower" class="tower-panel" hidden>
+      <div class="tower-head">
+        <h2>Control Tower</h2>
+        <button id="tower-exit" class="link" type="button">← Back</button>
+      </div>
+
+      <div id="tower-auth">
+        <button id="sign-in" type="button">Sign in with Google</button>
+      </div>
+      <p id="tower-msg" class="tower-msg"></p>
+
+      <div id="tower-controls" hidden>
+        <div class="airspace" data-open="true">
+          <div>
+            <span class="airspace-label">Airspace</span>
+            <span id="airspace-state" class="airspace-state">OPEN</span>
+          </div>
+          <button id="toggle" type="button">Close airspace</button>
+        </div>
+
+        <h3>Departures</h3>
+        <div class="board-wrap">
+          <table class="board">
+            <thead><tr><th>Time</th><th>Callsign</th><th>Status</th><th>Track</th></tr></thead>
+            <tbody id="board"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <button id="sign-out" class="link" type="button" hidden>Sign out</button>
+    </section>
+  </main>
+
   <script type="module" src="app.js"></script>
 </body>
 </html>

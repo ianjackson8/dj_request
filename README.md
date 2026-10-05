@@ -13,7 +13,8 @@ Guest phone → GitHub Pages form (docs/) → Firestore "requests"
 ```
 
 Each request moves through `pending → downloading → done | failed`, and the
-guest's page shows the status live.
+guest's page shows the status live as a flight tracker (Tower → In flight → Landed).
+Each finished download also pops up a macOS notification with the song and who asked for it.
 
 | Service      | CLI      | Accepted links                                   |
 |--------------|----------|--------------------------------------------------|
@@ -30,10 +31,13 @@ guest's page shows the status live.
    object into `docs/firebase-config.js`.
 5. **Project settings → Service accounts → Generate new private key**. Save it
    as `helper/service-account.json`. It's gitignored, so never commit it.
+6. **Build → Authentication → Get started → Google**: enable it. Under
+   **Settings → Authorized domains**, add `iansjackson.com`. This is only needed
+   for the control tower.
 
 ### 2. GitHub Pages
 Repo **Settings → Pages → Deploy from a branch → `main` / `/docs`**.
-The form will be at `https://ianjackson8.github.io/dj_request/`.
+The form will be at `https://iansjackson.com/dj_request/`.
 
 ### 3. Laptop helper
 Requires `yt-dlp`, `gamdl` and `ffmpeg` on your PATH.
@@ -53,6 +57,28 @@ For Apple Music, put your `cookies.txt` (Netscape format) at
 ```
 
 Requests sent while the helper is off are picked up as soon as it starts.
+
+Notifications are silent by default. Add `--notify-sound` for a chime (check it
+won't play through the PA), or use `--no-notify` to turn them off.
+
+## Pausing requests ("closing the airspace")
+
+When paused, the page shows "Airspace closed" and Firestore rejects new requests.
+Requests already in the queue still download.
+
+- **From the laptop:** in the helper's terminal, type `p` + Enter to pause, `r` to
+  resume, or `s` for status.
+- **From any browser:** type `tower` into the song-link field and submit. This
+  opens the Control Tower, which has a pause/resume switch and a live departures
+  board. Sign in with Google. The first time, grant your account access from
+  the laptop, then reload the page:
+
+  ```sh
+  .venv/bin/python helper/dj_helper.py --grant-admin you@gmail.com
+  ```
+
+  The code only reveals the panel. Only accounts granted admin can use it.
+  To change the code, edit `TOWER_CODE` in `docs/app.js`.
 
 Test a download without Firebase:
 

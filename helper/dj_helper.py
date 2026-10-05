@@ -7,6 +7,9 @@ result into the output folder.
 
     python dj_helper.py ~/Music/Requests
     python dj_helper.py ~/Music/Requests --test "https://youtu.be/..."
+    python dj_helper.py --grant-admin you@gmail.com
+
+While running, type p + Enter to pause requests, r to resume, s for status.
 """
 
 import argparse
@@ -16,7 +19,9 @@ import os
 import queue
 import re
 import subprocess
+import sys
 import tempfile
+import threading
 from pathlib import Path
 
 # Quiet gRPC's harmless fork() warnings when we shell out to the downloaders.
@@ -25,6 +30,7 @@ os.environ.setdefault("GRPC_VERBOSITY", "ERROR")
 log = logging.getLogger("dj_helper")
 
 COLLECTION = "requests"
+STATE_DOC = ("config", "state")  # {accepting: bool}; guests can only submit while true
 DOWNLOAD_TIMEOUT_S = 300
 AUDIO_EXTS = {".m4a", ".mp3", ".opus", ".ogg", ".webm", ".flac", ".wav", ".aac", ".mp4"}
 
@@ -141,16 +147,80 @@ def fetch(url: str, out_dir: Path, cookies: Path | None) -> list[Path]:
         return [to_aiff(src, out_dir) for src in sources]
 
 
-# --- Firestore listener ------------------------------------------------------
+# --- notifications -----------------------------------------------------------
 
-def listen(out_dir: Path, credentials_path: Path, cookies: Path | None) -> None:
+class Notifier:
+    """macOS notification banners via osascript. Silent unless sound is asked for."""
+
+    def __init__(self, enabled: bool, sound: bool):
+        self.enabled = enabled and sys.platform == "darwin"
+        self.sound = sound
+
+    def send(self, title: str, subtitle: str, message: str) -> None:
+        if not self.enabled:
+            return
+        # Strings go in as argv so quotes in song titles can't break the script.
+        script = ["on run argv",
+                  "display notification (item 3 of argv) with title (item 1 of argv)"
+                  " subtitle (item 2 of argv)" + (' sound name "Glass"' if self.sound else ""),
+                  "end run"]
+        cmd = ["osascript"] + [arg for line in script for arg in ("-e", line)]
+        subprocess.run(cmd + [title, subtitle, message], capture_output=True)
+
+
+# --- Firestore ---------------------------------------------------------------
+
+def init_firebase(credentials_path: Path):
     import firebase_admin
     from firebase_admin import credentials, firestore
-    from google.cloud.firestore_v1.base_query import FieldFilter
 
     firebase_admin.initialize_app(credentials.Certificate(str(credentials_path)))
-    db = firestore.client()
+    return firestore.client()
+
+
+def grant_admin(credentials_path: Path, email: str) -> None:
+    from firebase_admin import auth
+
+    init_firebase(credentials_path)
+    user = auth.get_user_by_email(email)
+    auth.set_custom_user_claims(user.uid, {"admin": True})
+    print(f"{email} is now cleared for the control tower. Reload the page to pick it up.")
+
+
+def set_accepting(state_ref, accepting: bool) -> None:
+    from firebase_admin import firestore
+
+    state_ref.set({"accepting": accepting, "updatedAt": firestore.SERVER_TIMESTAMP,
+                   "updatedBy": "helper"})
+
+
+def console_commands(state_ref, jobs: queue.Queue) -> None:
+    """Read p / r / s commands typed into the helper's terminal."""
+    for line in sys.stdin:
+        cmd = line.strip().lower()
+        if cmd in ("p", "pause"):
+            set_accepting(state_ref, False)
+        elif cmd in ("r", "resume"):
+            set_accepting(state_ref, True)
+        elif cmd in ("s", "status"):
+            snap = state_ref.get()
+            open_ = (snap.to_dict() or {}).get("accepting", True) if snap.exists else True
+            log.info("airspace %s · %d request(s) waiting",
+                     "OPEN" if open_ else "CLOSED", jobs.qsize())
+        elif cmd:
+            log.info("commands: p = pause requests, r = resume, s = status, Ctrl+C = quit")
+
+
+def listen(out_dir: Path, credentials_path: Path, cookies: Path | None,
+           notifier: Notifier) -> None:
+    from firebase_admin import firestore
+    from google.cloud.firestore_v1.base_query import FieldFilter
+
+    db = init_firebase(credentials_path)
     requests = db.collection(COLLECTION)
+    state_ref = db.collection(STATE_DOC[0]).document(STATE_DOC[1])
+    if not state_ref.get().exists:
+        set_accepting(state_ref, True)
 
     # Anything left mid-flight by a previous run goes back in the queue.
     for snap in requests.where(filter=FieldFilter("status", "==", "downloading")).stream():
@@ -160,17 +230,27 @@ def listen(out_dir: Path, credentials_path: Path, cookies: Path | None) -> None:
     jobs: queue.Queue = queue.Queue()
     seen: set[str] = set()
 
-    def on_snapshot(_docs, changes, _read_time):
+    def on_requests(_docs, changes, _read_time):
         for change in changes:
             doc = change.document
             if change.type.name == "ADDED" and doc.id not in seen:
                 seen.add(doc.id)
                 jobs.put(doc)
 
-    watch = (requests
-             .where(filter=FieldFilter("status", "==", "pending"))
-             .on_snapshot(on_snapshot))
-    log.info("listening for requests -> %s  (Ctrl+C to stop)", out_dir)
+    def on_state(docs, _changes, _read_time):
+        data = (docs[0].to_dict() or {}) if docs and docs[0].exists else {}
+        open_ = data.get("accepting", True)
+        log.info("✈ airspace %s%s", "OPEN — taking requests" if open_ else "CLOSED — requests paused",
+                 f" (by {data['updatedBy']})" if data.get("updatedBy") else "")
+
+    watches = [
+        requests.where(filter=FieldFilter("status", "==", "pending")).on_snapshot(on_requests),
+        state_ref.on_snapshot(on_state),
+    ]
+    if sys.stdin.isatty():
+        threading.Thread(target=console_commands, args=(state_ref, jobs), daemon=True).start()
+    log.info("listening for requests -> %s", out_dir)
+    log.info("type p + Enter to pause requests, r to resume, s for status, Ctrl+C to quit")
 
     try:
         while True:
@@ -187,22 +267,25 @@ def listen(out_dir: Path, credentials_path: Path, cookies: Path | None) -> None:
                 log.error("✗ %s: %s", url, exc)
                 doc.reference.update({"status": "failed", "error": str(exc)[:500],
                                       "finishedAt": firestore.SERVER_TIMESTAMP})
+                notifier.send("⚠️ Mayday — request failed", f"from {who}", url)
             else:
-                names = [f.name for f in files]
+                names = [f.stem for f in files]
                 log.info("✓ %s", ", ".join(names))
-                doc.reference.update({"status": "done", "files": names,
+                doc.reference.update({"status": "done", "files": [f.name for f in files],
                                       "finishedAt": firestore.SERVER_TIMESTAMP})
+                notifier.send("✈️ Touchdown", f"from {who}", ", ".join(names))
     except KeyboardInterrupt:
         log.info("stopping")
     finally:
-        watch.unsubscribe()
+        for watch in watches:
+            watch.unsubscribe()
 
 
 def main() -> None:
     here = Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("out_dir", type=Path, help="folder to save AIFF files into")
+    parser.add_argument("out_dir", type=Path, nargs="?", help="folder to save AIFF files into")
     parser.add_argument("--credentials", type=Path,
                         default=Path(os.environ.get("DJ_HELPER_CREDENTIALS",
                                                     here / "service-account.json")),
@@ -213,11 +296,23 @@ def main() -> None:
                         help="Apple Music cookies.txt for gamdl (default: helper/cookies.txt)")
     parser.add_argument("--test", metavar="URL",
                         help="download a single link and exit, without Firebase")
+    parser.add_argument("--grant-admin", metavar="EMAIL",
+                        help="let this Google account use the site's control tower, then exit")
+    parser.add_argument("--no-notify", action="store_true", help="disable macOS notifications")
+    parser.add_argument("--notify-sound", action="store_true",
+                        help="play a chime with notifications (careful: may hit the PA)")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+
+    if args.grant_admin:
+        grant_admin(args.credentials, args.grant_admin)
+        return
+
+    if args.out_dir is None:
+        parser.error("out_dir is required")
     out_dir = args.out_dir.expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -228,7 +323,8 @@ def main() -> None:
 
     if not args.credentials.exists():
         parser.error(f"service account file not found: {args.credentials}")
-    listen(out_dir, args.credentials, args.cookies)
+    listen(out_dir, args.credentials, args.cookies,
+           Notifier(enabled=not args.no_notify, sound=args.notify_sound))
 
 
 if __name__ == "__main__":

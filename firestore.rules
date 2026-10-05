@@ -1,13 +1,25 @@
 rules_version = '2';
 
-// Guests can only create a well-formed pending request and read back a request
-// by its id (to see its status). The laptop helper uses a service account,
-// which bypasses these rules.
+// Guests can create a well-formed pending request while the airspace is open,
+// and read back a request by its id (to see its status). Admins (Google
+// accounts given the `admin` claim via `dj_helper.py --grant-admin`) can open
+// or close the airspace and list requests. The laptop helper uses a service
+// account, which bypasses these rules.
 //
 // Note: `service` is a reserved word in rules, so the field is `platform`.
 // In the regexes, [.] is a literal dot and [^ ] is any non-space character.
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+
+    // A missing state doc means open, so a fresh project works out of the box.
+    function accepting() {
+      return !exists(/databases/$(database)/documents/config/state)
+        || get(/databases/$(database)/documents/config/state).data.accepting == true;
+    }
 
     function isYoutube(url) {
       return url.matches('https://(www[.]|m[.]|music[.])?(youtube[.]com|youtu[.]be)/[^ ]+');
@@ -29,12 +41,20 @@ service cloud.firestore {
         || (data.requester is string && data.requester.size() <= 40);
     }
 
+    match /config/state {
+      allow read: if true;
+      allow write: if isAdmin()
+        && request.resource.data.keys().hasOnly(['accepting', 'updatedAt', 'updatedBy'])
+        && request.resource.data.accepting is bool;
+    }
+
     match /requests/{requestId} {
       allow get: if true;
-      allow list, update, delete: if false;
+      allow list: if isAdmin();
+      allow update, delete: if false;
 
-      allow create: if
-        request.resource.data.keys().hasOnly(['url', 'platform', 'requester', 'status', 'createdAt'])
+      allow create: if accepting()
+        && request.resource.data.keys().hasOnly(['url', 'platform', 'requester', 'status', 'createdAt'])
         && request.resource.data.keys().hasAll(['url', 'platform', 'status', 'createdAt'])
         && request.resource.data.status == 'pending'
         && request.resource.data.createdAt == request.time
