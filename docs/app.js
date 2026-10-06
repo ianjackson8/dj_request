@@ -6,10 +6,10 @@ import {
 import {
   getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { firebaseConfig } from "./firebase-config.js?v=20261004215552";
+import { firebaseConfig } from "./firebase-config.js?v=20261005195117";
 
 // Stamped by scripts/stamp-version.sh; must match docs/version.json when deployed.
-const APP_VERSION = "20261004215552";
+const APP_VERSION = "20261005195117";
 
 // Typing this into the link field opens the control tower. It only reveals the
 // panel; actually using it requires a Google account with the admin claim.
@@ -48,6 +48,9 @@ const closedBanner = $("closed-banner");
 const launchJet = document.querySelector(".launch-jet");
 
 let accepting = true;
+// True while signed in with the admin claim: requests are marked as DJ
+// requests, which the helper lets be playlists or albums.
+let isDj = false;
 let unsubscribeRequest = null;
 
 // ---------- Stay up to date ----------
@@ -120,6 +123,7 @@ form.addEventListener("submit", async (event) => {
   const payload = { url, platform, status: "pending", createdAt: serverTimestamp() };
   const requester = requesterInput.value.trim();
   if (requester) payload.requester = requester;
+  if (isDj) payload.dj = true;
 
   submitBtn.disabled = true;
   try {
@@ -200,7 +204,13 @@ $("toggle").addEventListener("click", async (event) => {
   }
 });
 
+function setDj(on) {
+  isDj = on;
+  $("pass-type").textContent = on ? "Captain's pass" : "Boarding pass";
+}
+
 onAuthStateChanged(auth, async (user) => {
+  setDj(false);
   unsubscribeBoard?.();
   unsubscribeBoard = null;
   $("sign-out").hidden = !user;
@@ -211,6 +221,7 @@ onAuthStateChanged(auth, async (user) => {
 
   // Force a refresh so a freshly granted admin claim is picked up.
   const token = await user.getIdTokenResult(true);
+  setDj(Boolean(token.claims.admin));
   if (!token.claims.admin) {
     towerMsg.innerHTML = "Signed in as <b></b>, but you're not cleared for the tower. " +
       "On the laptop, run <code></code> then reload.";

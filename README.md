@@ -23,9 +23,20 @@ Each finished download also pops up a macOS notification with the song and who a
 | Apple Music  | `gamdl`  | `/song/…` or album links with `?i=` |
 | Spotify      | matched to Apple Music by title, artist and length (±3s) and downloaded with `gamdl`; falls back to `spotDL` (YouTube audio) if there's no match | `/track/…`, `spotify.link` share links |
 
-**Playlist protection** is in the helper only. Playlists, albums, sets, and
-artist/profile pages are refused, short share links are expanded before the
-check, and a request that would produce more than one track is refused.
+**Playlist protection** is in the helper only. For guests, playlists, albums,
+sets, and artist/profile pages are refused, short share links are expanded
+before the check, and a request that would produce more than one track is
+refused.
+
+**DJ requests can be playlists.** Playlists, albums and SoundCloud sets are
+allowed when the request comes from you:
+- **On the site:** sign in to the Control Tower with your admin account. The
+  form header changes to "Captain's pass", and your requests are marked as DJ
+  requests. Firestore rules only accept that mark from an admin account.
+- **On the laptop:** paste a link into the helper's terminal and press Enter.
+
+Artist pages and profiles are still refused, even for DJ requests. Spotify
+playlists and albums download through spotDL (YouTube audio).
 
 SoundCloud Go+ tracks only offer a 30-second preview. The helper refuses
 these instead of saving a clip.
@@ -76,7 +87,7 @@ When paused, the page shows "Airspace closed" and Firestore rejects new requests
 Requests already in the queue still download.
 
 - **From the laptop:** in the helper's terminal, type `p` + Enter to pause, `r` to
-  resume, or `s` for status.
+  resume, or `s` for status. Paste a link to queue it as a DJ request.
 - **From any browser:** type `tower` into the song-link field and submit. This
   opens the Control Tower, which has a pause/resume switch and a live departures
   board. Sign in with Google. The first time, grant your account access from

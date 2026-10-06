@@ -36,6 +36,11 @@ service cloud.firestore {
               && data.url.matches('https://(open[.]spotify[.]com|spotify[.]link)/[^ ]+')));
     }
 
+    // DJ requests (playlists allowed by the helper) can only come from an admin.
+    function validDjFlag(data) {
+      return !('dj' in data) || (data.dj == true && isAdmin());
+    }
+
     function validRequester(data) {
       return !('requester' in data)
         || (data.requester is string && data.requester.size() <= 40);
@@ -54,12 +59,13 @@ service cloud.firestore {
       allow update, delete: if false;
 
       allow create: if accepting()
-        && request.resource.data.keys().hasOnly(['url', 'platform', 'requester', 'status', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['url', 'platform', 'requester', 'dj', 'status', 'createdAt'])
         && request.resource.data.keys().hasAll(['url', 'platform', 'status', 'createdAt'])
         && request.resource.data.status == 'pending'
         && request.resource.data.createdAt == request.time
         && validLink(request.resource.data)
-        && validRequester(request.resource.data);
+        && validRequester(request.resource.data)
+        && validDjFlag(request.resource.data);
     }
   }
 }

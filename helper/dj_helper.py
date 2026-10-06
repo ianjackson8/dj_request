@@ -9,11 +9,13 @@ result into the output folder.
     python dj_helper.py ~/Music/Requests --test "https://youtu.be/..."
     python dj_helper.py --grant-admin you@gmail.com
 
-While running, type p + Enter to pause requests, r to resume, s for status.
+While running, type p + Enter to pause requests, r to resume, s for status, or
+paste a link to download it as a DJ request (playlists and albums allowed).
 """
 
 import argparse
 import json
+from dataclasses import dataclass
 from html import unescape
 import logging
 import os
@@ -36,6 +38,7 @@ log = logging.getLogger("dj_helper")
 COLLECTION = "requests"
 STATE_DOC = ("config", "state")  # {accepting: bool}; guests can only submit while true
 DOWNLOAD_TIMEOUT_S = 300
+COLLECTION_TIMEOUT_S = 3600  # DJ-only playlists/albums
 AUDIO_EXTS = {".m4a", ".mp3", ".opus", ".ogg", ".webm", ".flac", ".wav", ".aac", ".mp4"}
 
 APPLE_STOREFRONT = "us"  # must match the country of the Apple Music account in cookies.txt
@@ -59,12 +62,20 @@ SONG_LINKS = {
 # App share links that redirect somewhere else; we expand them before deciding.
 SHORT_LINKS = re.compile(r"^https://(on\.soundcloud\.com|spotify\.link)/[A-Za-z0-9]+/?$")
 
-# Recognisable multi-track links, so guests get a clear "no playlists" message.
-PLAYLIST_LINKS = re.compile(
-    r"youtube\.com/(playlist|@|channel/|c/|user/)"
-    r"|music\.apple\.com/\S*/(album|playlist|artist|curator|station)/"
-    r"|soundcloud\.com/[^\s/?#]+(/(sets|likes|tracks|reposts|albums|popular-tracks|toptracks|spotlight)\b|/?$)"
-    r"|open\.spotify\.com/(intl-[a-z-]+/)?(album|playlist|artist|show|episode|user)/")
+# Playlists, albums and sets. Refused for guests; allowed for the DJ.
+COLLECTION_LINKS = {
+    "youtube": re.compile(r"^https://(www\.|m\.|music\.)?youtube\.com/playlist\?\S*\blist=[\w-]+\S*$"),
+    "apple": re.compile(r"^https://music\.apple\.com/\S*/(album|playlist)/\S+$"),
+    "soundcloud": re.compile(r"^https://(www\.|m\.)?soundcloud\.com/[^\s/?#]+/sets/[^\s/?#]+\S*$"),
+    "spotify": re.compile(r"^https://open\.spotify\.com/(intl-[a-z-]+/)?(album|playlist)/[A-Za-z0-9]+\S*$"),
+}
+
+# Artist pages, channels and profiles: could be hundreds of tracks, so refused for everyone.
+PROFILE_LINKS = re.compile(
+    r"youtube\.com/(@|channel/|c/|user/)"
+    r"|music\.apple\.com/\S*/(artist|curator|station)/"
+    r"|soundcloud\.com/[^\s/?#]+(/(likes|tracks|reposts|albums|popular-tracks|toptracks|spotlight)\b|/?$)"
+    r"|open\.spotify\.com/(intl-[a-z-]+/)?(artist|show|episode|user)/")
 
 
 class RejectedLink(ValueError):
@@ -75,12 +86,18 @@ class RejectedLink(ValueError):
         self.reason = reason
 
 
-def classify(url: str) -> str:
+def classify(url: str, allow_collections: bool = False) -> tuple[str, bool]:
+    """Return (platform, is_collection), or raise RejectedLink."""
     for name, pattern in SONG_LINKS.items():
         if pattern.match(url):
-            return name
-    if PLAYLIST_LINKS.search(url):
-        raise RejectedLink("playlist", "playlists, albums and profiles aren't allowed, one song per request")
+            return name, False
+    for name, pattern in COLLECTION_LINKS.items():
+        if pattern.match(url):
+            if allow_collections:
+                return name, True
+            raise RejectedLink("playlist", "playlists and albums aren't allowed, one song per request")
+    if PROFILE_LINKS.search(url):
+        raise RejectedLink("playlist", "artist pages and profiles aren't allowed")
     raise RejectedLink("unsupported", f"unsupported link: {url}")
 
 
@@ -102,24 +119,29 @@ def expand_short_link(url: str) -> str:
     return found.group(0)
 
 
-def resolve_link(url: str) -> tuple[str, str]:
-    """Return (platform, url) for a single-song link, or raise RejectedLink."""
+def resolve_link(url: str, allow_collections: bool = False) -> tuple[str, bool, str]:
+    """Return (platform, is_collection, url), or raise RejectedLink."""
     if SHORT_LINKS.match(url):
         expanded = expand_short_link(url)
         log.info("  expanded %s -> %s", url, expanded)
         url = expanded
-    return classify(url), url
+    return *classify(url, allow_collections), url
 
 
 # --- downloaders -------------------------------------------------------------
 
-def download_ytdlp(url: str, workdir: Path) -> None:
+def download_ytdlp(url: str, workdir: Path, collection: bool = False) -> None:
     """YouTube and SoundCloud."""
+    if collection:
+        # Skip unavailable/preview-only entries instead of failing the whole playlist.
+        scope, timeout = ["--yes-playlist", "--ignore-errors"], COLLECTION_TIMEOUT_S
+    else:
+        # --playlist-items 1 is belt and braces: never more than one track.
+        scope, timeout = ["--no-playlist", "--playlist-items", "1"], DOWNLOAD_TIMEOUT_S
     try:
         run([
             "yt-dlp",
-            "--no-playlist",
-            "--playlist-items", "1",  # belt and braces: never more than one track
+            *scope,
             # SoundCloud Go+ tracks only expose 30s previews; never hand the DJ a clip.
             "-f", "bestaudio[format_id!*=preview]",
             "-x",
@@ -127,18 +149,25 @@ def download_ytdlp(url: str, workdir: Path) -> None:
             "--embed-thumbnail",
             "-o", str(workdir / "%(title)s.%(ext)s"),
             url,
-        ])
+        ], timeout, allow_partial=collection)
     except RuntimeError as exc:
         if "Requested format is not available" in str(exc):
             raise RuntimeError("only a 30-second preview is available (SoundCloud Go+ track)") from exc
         raise
 
 
-def download_apple(url: str, workdir: Path, cookies: Path | None) -> None:
+def download_apple(url: str, workdir: Path, cookies: Path | None, collection: bool = False) -> None:
     cmd = ["gamdl", "-o", str(workdir), "--temp-path", str(workdir / ".gamdl-tmp")]
     if cookies:
         cmd += ["-c", str(cookies)]
-    run(cmd + [url])
+    run(cmd + [url], COLLECTION_TIMEOUT_S if collection else DOWNLOAD_TIMEOUT_S,
+        allow_partial=collection)
+
+
+def download_spotdl(url: str, workdir: Path, collection: bool = False) -> None:
+    spotdl = shutil.which("spotdl") or str(Path(sys.executable).parent / "spotdl")
+    run([spotdl, "download", url, "--output", str(workdir / "{artists} - {title}.{output-ext}")],
+        COLLECTION_TIMEOUT_S if collection else DOWNLOAD_TIMEOUT_S, allow_partial=collection)
 
 
 def spotify_track_info(url: str) -> dict:
@@ -196,13 +225,17 @@ def download_spotify(url: str, workdir: Path, cookies: Path | None) -> None:
             log.warning("  apple music download failed, falling back to spotDL: %s", exc)
     else:
         log.info("  not on apple music, falling back to spotDL")
-    spotdl = shutil.which("spotdl") or str(Path(sys.executable).parent / "spotdl")
-    run([spotdl, "download", url, "--output", str(workdir / "{artists} - {title}.{output-ext}")])
+    download_spotdl(url, workdir)
 
 
-def run(cmd: list[str]) -> None:
+def run(cmd: list[str], timeout: int = DOWNLOAD_TIMEOUT_S, allow_partial: bool = False) -> None:
+    """Run a downloader. With allow_partial, a non-zero exit is only logged: in a
+    playlist some tracks may fail, and fetch() checks that something was saved."""
     log.debug("$ %s", " ".join(cmd))
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=DOWNLOAD_TIMEOUT_S)
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    if proc.returncode != 0 and allow_partial:
+        log.warning("  %s reported errors for some tracks; keeping what downloaded", cmd[0])
+        return
     if proc.returncode != 0:
         tail = (proc.stderr or proc.stdout).strip().splitlines()[-5:]
         raise RuntimeError(f"{cmd[0]} failed: " + " | ".join(tail))
@@ -256,27 +289,36 @@ def unique_path(path: Path) -> Path:
     return candidate
 
 
-def fetch(url: str, out_dir: Path, cookies: Path | None) -> list[Path]:
-    """Download one song link and return the AIFF file written to out_dir."""
-    platform, url = resolve_link(url)
+def fetch(url: str, out_dir: Path, cookies: Path | None,
+          allow_collections: bool = False) -> list[Path]:
+    """Download a link and return the AIFF files written to out_dir.
+
+    Guests get exactly one song. With allow_collections (DJ requests), playlists,
+    albums and sets are downloaded too.
+    """
+    platform, collection, url = resolve_link(url, allow_collections)
+    if collection:
+        log.info("  DJ request: downloading the whole %s collection", platform)
 
     with tempfile.TemporaryDirectory(prefix="djreq-") as tmp:
         workdir = Path(tmp)
         if platform in ("youtube", "soundcloud"):
-            download_ytdlp(url, workdir)
+            download_ytdlp(url, workdir, collection)
         elif platform == "apple":
-            download_apple(url, workdir, cookies)
+            download_apple(url, workdir, cookies, collection)
+        elif platform == "spotify" and collection:
+            download_spotdl(url, workdir, collection)
         elif platform == "spotify":
             download_spotify(url, workdir, cookies)
 
-        sources = [p for p in workdir.rglob("*")
-                   if p.suffix.lower() in AUDIO_EXTS and ".gamdl-tmp" not in p.parts]
+        sources = sorted(p for p in workdir.rglob("*")
+                         if p.suffix.lower() in AUDIO_EXTS and ".gamdl-tmp" not in p.parts)
         if not sources:
             raise RuntimeError("downloader finished but produced no audio file")
-        if len(sources) > 1:
+        if len(sources) > 1 and not collection:
             # Should be impossible after the link checks; refuse rather than flood the crate.
             raise RejectedLink("playlist", f"link produced {len(sources)} tracks, one song per request")
-        return [to_aiff(sources[0], out_dir)]
+        return [to_aiff(src, out_dir) for src in sources]
 
 
 # --- notifications -----------------------------------------------------------
@@ -327,10 +369,13 @@ def set_accepting(state_ref, accepting: bool) -> None:
 
 
 def console_commands(state_ref, jobs: queue.Queue) -> None:
-    """Read p / r / s commands typed into the helper's terminal."""
+    """Read p / r / s commands, or a pasted link (a DJ request), from the helper's terminal."""
     for line in sys.stdin:
         cmd = line.strip().lower()
-        if cmd in ("p", "pause"):
+        if cmd.startswith("http"):
+            jobs.put(Job(url=line.strip(), who="DJ (terminal)", dj=True))
+            log.info("queued DJ request (%d waiting)", jobs.qsize())
+        elif cmd in ("p", "pause"):
             set_accepting(state_ref, False)
         elif cmd in ("r", "resume"):
             set_accepting(state_ref, True)
@@ -340,7 +385,22 @@ def console_commands(state_ref, jobs: queue.Queue) -> None:
             log.info("airspace %s · %d request(s) waiting",
                      "OPEN" if open_ else "CLOSED", jobs.qsize())
         elif cmd:
-            log.info("commands: p = pause requests, r = resume, s = status, Ctrl+C = quit")
+            log.info("commands: paste a link = DJ request (playlists OK), p = pause requests, "
+                     "r = resume, s = status, Ctrl+C = quit")
+
+
+@dataclass
+class Job:
+    url: str
+    who: str
+    dj: bool  # DJ requests may be playlists/albums
+    doc: object = None  # Firestore snapshot, or None for links pasted into the terminal
+
+
+def summarize(names: list[str]) -> str:
+    if len(names) <= 3:
+        return ", ".join(names)
+    return f"{len(names)} tracks: {', '.join(names[:2])}, …"
 
 
 def listen(out_dir: Path, credentials_path: Path, cookies: Path | None,
@@ -367,7 +427,10 @@ def listen(out_dir: Path, credentials_path: Path, cookies: Path | None,
             doc = change.document
             if change.type.name == "ADDED" and doc.id not in seen:
                 seen.add(doc.id)
-                jobs.put(doc)
+                data = doc.to_dict() or {}
+                # `dj` can only be set by an admin-signed-in page (enforced by firestore.rules).
+                jobs.put(Job(url=data.get("url", ""), who=data.get("requester") or "anonymous",
+                             dj=data.get("dj") is True, doc=doc))
 
     def on_state(docs, _changes, _read_time):
         data = (docs[0].to_dict() or {}) if docs and docs[0].exists else {}
@@ -382,34 +445,35 @@ def listen(out_dir: Path, credentials_path: Path, cookies: Path | None,
     if sys.stdin.isatty():
         threading.Thread(target=console_commands, args=(state_ref, jobs), daemon=True).start()
     log.info("listening for requests -> %s", out_dir)
-    log.info("type p + Enter to pause requests, r to resume, s for status, Ctrl+C to quit")
+    log.info("paste a link + Enter for a DJ request (playlists OK); "
+             "p = pause requests, r = resume, s = status, Ctrl+C = quit")
+
+    def update(job: Job, fields: dict) -> None:
+        if job.doc is not None:
+            job.doc.reference.update(fields)
 
     try:
         while True:
-            doc = jobs.get()
-            data = doc.to_dict() or {}
-            url = data.get("url", "")
-            who = data.get("requester") or "anonymous"
-            log.info("▶ %s (from %s)", url, who)
-            doc.reference.update({"status": "downloading",
-                                  "startedAt": firestore.SERVER_TIMESTAMP})
+            job = jobs.get()
+            log.info("▶ %s (from %s%s)", job.url, job.who, ", DJ" if job.dj else "")
+            update(job, {"status": "downloading", "startedAt": firestore.SERVER_TIMESTAMP})
             try:
-                files = fetch(url, out_dir, cookies)
+                files = fetch(job.url, out_dir, cookies, allow_collections=job.dj)
             except RejectedLink as exc:
-                log.warning("⛔ %s: %s", url, exc)
-                doc.reference.update({"status": "failed", "reason": exc.reason, "error": str(exc),
-                                      "finishedAt": firestore.SERVER_TIMESTAMP})
+                log.warning("⛔ %s: %s", job.url, exc)
+                update(job, {"status": "failed", "reason": exc.reason, "error": str(exc),
+                             "finishedAt": firestore.SERVER_TIMESTAMP})
             except Exception as exc:  # noqa: BLE001 - report every failure to the guest
-                log.error("✗ %s: %s", url, exc)
-                doc.reference.update({"status": "failed", "error": str(exc)[:500],
-                                      "finishedAt": firestore.SERVER_TIMESTAMP})
-                notifier.send("⚠️ Mayday — request failed", f"from {who}", url)
+                log.error("✗ %s: %s", job.url, exc)
+                update(job, {"status": "failed", "error": str(exc)[:500],
+                             "finishedAt": firestore.SERVER_TIMESTAMP})
+                notifier.send("⚠️ Mayday — request failed", f"from {job.who}", job.url)
             else:
                 names = [f.stem for f in files]
                 log.info("✓ %s", ", ".join(names))
-                doc.reference.update({"status": "done", "files": [f.name for f in files],
-                                      "finishedAt": firestore.SERVER_TIMESTAMP})
-                notifier.send("✈️ Touchdown", f"from {who}", ", ".join(names))
+                update(job, {"status": "done", "files": [f.name for f in files],
+                             "finishedAt": firestore.SERVER_TIMESTAMP})
+                notifier.send("✈️ Touchdown", f"from {job.who}", summarize(names))
     except KeyboardInterrupt:
         log.info("stopping")
     finally:
@@ -454,7 +518,7 @@ def main() -> None:
 
     if args.test:
         try:
-            for f in fetch(args.test, out_dir, args.cookies):
+            for f in fetch(args.test, out_dir, args.cookies, allow_collections=True):
                 print(f)
         except RejectedLink as exc:
             sys.exit(f"rejected ({exc.reason}): {exc}")
