@@ -6,10 +6,10 @@ import {
 import {
   getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { firebaseConfig } from "./firebase-config.js?v=20261005195117";
+import { firebaseConfig } from "./firebase-config.js?v=20261005201116";
 
 // Stamped by scripts/stamp-version.sh; must match docs/version.json when deployed.
-const APP_VERSION = "20261005195117";
+const APP_VERSION = "20261005201116";
 
 // Typing this into the link field opens the control tower. It only reveals the
 // panel; actually using it requires a Google account with the admin claim.
