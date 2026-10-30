@@ -386,6 +386,41 @@ form.closed button { background: #b9b3a3; box-shadow: 0 4px 0 #8f8a7c; color: #4
 .status.ok { color: var(--primary); }
 .status.error { color: var(--error); }
 
+/* ---------- QR code ---------- */
+
+.qr-button {
+  display: flex; align-items: center; justify-content: center; gap: .5rem;
+  width: 100%; margin-top: 1rem;
+  background: transparent; color: var(--ink);
+  border: 2px solid color-mix(in srgb, var(--ink) 35%, transparent);
+  box-shadow: none; font-size: .95rem;
+}
+.qr-button[hidden] { display: none; }
+.qr-button:active { box-shadow: none; }
+.qr-button svg { width: 20px; height: 20px; fill: currentColor; }
+
+.qr-overlay {
+  position: fixed; inset: 0; z-index: 10;
+  display: grid; place-items: center; padding: 16px;
+  background: #000c;
+  backdrop-filter: blur(6px);
+}
+.qr-overlay[hidden] { display: none; }
+.qr-card {
+  width: min(100%, 24rem);
+  padding: 1.4rem 1.2rem 1.2rem;
+  border-radius: 16px; text-align: center;
+  background: var(--card); color: var(--card-ink);
+  box-shadow: 0 20px 60px #000a;
+}
+/* Always dark on white: phone cameras read that best. */
+.qr-code { background: #fff; border-radius: 10px; padding: 8px; }
+.qr-code svg { display: block; width: 100%; height: auto; }
+.qr-code svg path { fill: #000; }
+.qr-caption { margin: 1rem 0 .2rem; font: 700 1.4rem/1.1 var(--display); text-transform: uppercase; letter-spacing: .04em; }
+.qr-url { margin: 0 0 1rem; font: 500 .85rem var(--mono); color: var(--card-muted); overflow-wrap: anywhere; }
+.qr-card button { width: 100%; }
+
 /* ---------- Admin panel ---------- */
 
 .admin-panel {
@@ -413,6 +448,13 @@ h3 { font-size: 1rem; margin: 1.4rem 0 .6rem; color: var(--muted); }
 .admin-msg code { font-family: var(--mono); color: var(--accent); }
 
 .theme-picker { margin-top: 1rem; }
+.option-row {
+  display: flex; align-items: flex-start; gap: .7rem; margin-top: 1rem;
+  padding: .9rem 1rem; border-radius: 10px; border: 1px solid var(--panel-line);
+  cursor: pointer;
+}
+.option-row input { width: 1.25rem; height: 1.25rem; margin: .1rem 0 0; padding: 0; accent-color: var(--accent); flex: none; }
+.option-row small { display: block; margin-top: .2rem; color: var(--muted); font-size: .8rem; }
 .theme-picker select { background: #050505; color: var(--ink); border-color: var(--panel-line); }
 
 .switch {

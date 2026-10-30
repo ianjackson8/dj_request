@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#120a24">
   <title>Request a Song</title>
-  <link rel="icon" href="favicon.svg?v=20261030135925" type="image/svg+xml">
-  <link rel="icon" href="favicon-32.png?v=20261030135925" sizes="32x32" type="image/png">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=20261030135925">
+  <link rel="icon" href="favicon.svg?v=20261030140844" type="image/svg+xml">
+  <link rel="icon" href="favicon-32.png?v=20261030140844" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=20261030140844">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261030135925">
+  <link rel="stylesheet" href="style.css?v=20261030140844">
 </head>
 <body>
   <!-- The theme's icon (a jet, a music note…). theme.js fills in the shape. -->
@@ -67,6 +67,12 @@
       <p id="status" class="status" role="status"></p>
     </section>
 
+    <!-- Lets a guest show the request page's QR code to friends. Admins turn it on or off. -->
+    <button id="qr-open" class="qr-button" type="button" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h8v8H3zm2 2v4h4V5zm8-2h8v8h-8zm2 2v4h4V5zM3 13h8v8H3zm2 2v4h4v-4zm8-2h3v3h-3zm3 3h3v3h-3zm-3 3h3v2h-3zm5-6h3v3h-3zm0 6h3v2h-3z"/></svg>
+      Show QR code
+    </button>
+
     <section id="admin" class="admin-panel" hidden>
       <div class="admin-head">
         <h2 data-text="adminTitle"></h2>
@@ -92,6 +98,11 @@
           <select id="theme-select"></select>
         </label>
 
+        <label class="option-row">
+          <input id="qr-toggle" type="checkbox">
+          <span>Show QR code button <small>guests can show the page's QR code to friends</small></span>
+        </label>
+
         <h3 data-text="boardTitle"></h3>
         <div class="board-wrap">
           <table class="board">
@@ -105,8 +116,21 @@
     </section>
   </main>
 
+  <div id="qr-overlay" class="qr-overlay" role="dialog" aria-modal="true" aria-label="QR code" hidden>
+    <div class="qr-card">
+      <p class="eyebrow" data-text="eyebrow"></p>
+      <div id="qr-code" class="qr-code"></div>
+      <p class="qr-caption">Scan to request a song</p>
+      <p id="qr-url" class="qr-url"></p>
+      <button id="qr-close" type="button">Done</button>
+    </div>
+  </div>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"
+          integrity="sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k"
+          crossorigin="anonymous"></script>
   <!-- theme.js runs first so the page is themed before Firebase finishes loading. -->
-  <script type="module" src="theme.js?v=20261030135925"></script>
-  <script type="module" src="app.js?v=20261030135925"></script>
+  <script type="module" src="theme.js?v=20261030140844"></script>
+  <script type="module" src="app.js?v=20261030140844"></script>
 </body>
 </html>

@@ -112,6 +112,14 @@ To add a theme:
 The theme is stored in Firestore at `config/state.theme`. Pausing from the
 helper keeps it.
 
+## QR code button
+
+Tick **Show QR code button** in the admin panel to add a "Show QR code" button
+under the request form. Guests tap it to show a big QR code of the page, so
+friends can scan it from their phone. Untick it and the button disappears from
+every open page. It's off by default. The code is generated from the page's own
+address.
+
 ## Pausing requests
 
 When paused, the page shows a "paused" banner and Firestore rejects new requests.
@@ -120,8 +128,8 @@ Requests already in the queue still download.
 - **From the laptop:** in the helper's terminal, type `p` + Enter to pause, `r` to
   resume, or `s` for status. Paste a link to queue it as a DJ request.
 - **From any browser:** type `admin` into the song-link field and submit. This
-  opens the admin panel, which has a pause/resume switch, the theme picker and
-  a live list of requests. Sign in with Google. The first time, grant your account access from
+  opens the admin panel, which has a pause/resume switch, the theme picker, the
+  QR button switch and a live list of requests. Sign in with Google. The first time, grant your account access from
   the laptop, then reload the page:
 
   ```sh

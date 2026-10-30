@@ -6,13 +6,13 @@ import {
 import {
   getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { firebaseConfig } from "./firebase-config.js?v=20261030135925";
+import { firebaseConfig } from "./firebase-config.js?v=20261030140844";
 import {
   THEMES, applyTheme, currentTheme, currentThemeKey,
-} from "./theme.js?v=20261030135925";
+} from "./theme.js?v=20261030140844";
 
 // Stamped by scripts/stamp-version.sh; must match docs/version.json when deployed.
-const APP_VERSION = "20261030135925";
+const APP_VERSION = "20261030140844";
 
 // Typing this into the link field opens the admin panel. It only reveals the
 // panel; actually using it requires a Google account with the admin claim.
@@ -47,6 +47,8 @@ const closedBanner = $("closed-banner");
 const launchIcon = document.querySelector(".launch-icon");
 
 let accepting = true;
+// Whether guests see the "Show QR code" button. Off unless an admin turns it on.
+let showQr = false;
 // True while signed in with the admin claim: requests are marked as DJ
 // requests, which the helper lets be playlists or albums.
 let isDj = false;
@@ -67,7 +69,7 @@ async function checkForUpdate() {
   try {
     const res = await fetch(`version.json?t=${Date.now()}`, { cache: "no-store" });
     const { version } = await res.json();
-    const busy = urlInput.value.trim() !== "" || !adminPanel.hidden;
+    const busy = urlInput.value.trim() !== "" || !adminPanel.hidden || !$("qr-overlay").hidden;
     // The ?v= guard stops a reload loop if the CDN is still serving old files.
     if (version && version !== APP_VERSION && !busy && params.get("v") !== version) {
       location.replace(`${location.pathname}?v=${version}`);
@@ -148,7 +150,7 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
-// ---------- Shared state: open / paused, and the theme ----------
+// ---------- Shared state: open / paused, theme, QR button ----------
 
 function renderAccepting() {
   const { text } = currentTheme();
@@ -168,6 +170,7 @@ function renderAll() {
   if (lastStatus) showProgress(lastStatus);
   if (lastBoard) renderBoard(lastBoard);
   themeSelect.value = currentThemeKey();
+  renderQr();
 }
 
 const themeSelect = $("theme-select");
@@ -179,11 +182,12 @@ renderAll();
 onSnapshot(stateRef, (snap) => {
   const data = snap.exists() ? snap.data() : {};
   accepting = data.accepting !== false;
+  showQr = data.showQr === true;
   applyTheme(data.theme);
   renderAll();
 }, (err) => console.error("state listener", err));
 
-// Merge, so pausing doesn't reset the theme and vice versa. `accepting` is
+// Merge, so one setting doesn't reset the others. `accepting` is
 // always sent because the rules require it.
 function saveState(fields) {
   return setDoc(stateRef, {
@@ -207,11 +211,13 @@ let unsubscribeBoard = null;
 function openAdmin() {
   guest.hidden = true;
   adminPanel.hidden = false;
+  renderQr();
 }
 
 $("admin-exit").addEventListener("click", () => {
   adminPanel.hidden = true;
   guest.hidden = false;
+  renderQr();
 });
 
 $("sign-in").addEventListener("click", () => {
@@ -243,6 +249,19 @@ themeSelect.addEventListener("change", async () => {
     themeSelect.value = currentThemeKey();
   } finally {
     themeSelect.disabled = false;
+  }
+});
+
+$("qr-toggle").addEventListener("change", async (event) => {
+  const box = event.target;
+  box.disabled = true;
+  try {
+    await saveState({ showQr: box.checked });
+  } catch (err) {
+    adminMsg.textContent = `Couldn't change the QR button: ${err.message}`;
+    box.checked = showQr;
+  } finally {
+    box.disabled = false;
   }
 });
 
@@ -312,3 +331,41 @@ function renderBoard(snap) {
     track.title = data.error || data.url;
   }
 }
+
+// ---------- QR code ----------
+
+// The page's own address, so the code stays right if the site moves.
+const pageUrl = location.origin + location.pathname;
+
+// Uses $() rather than constants because renderAll() calls this at startup.
+function renderQr() {
+  $("qr-open").hidden = !showQr || !$("admin").hidden;
+  $("qr-toggle").checked = showQr;
+  if (!showQr) closeQr();
+}
+
+function openQr() {
+  const box = $("qr-code");
+  // qrcode-generator is loaded from a <script> tag in index.html.
+  if (!box.firstChild && window.qrcode) {
+    const qr = window.qrcode(0, "M");
+    qr.addData(pageUrl);
+    qr.make();
+    box.innerHTML = qr.createSvgTag({ cellSize: 1, margin: 2, scalable: true });
+  }
+  $("qr-url").textContent = pageUrl.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  $("qr-overlay").hidden = false;
+}
+
+function closeQr() {
+  $("qr-overlay").hidden = true;
+}
+
+$("qr-open").addEventListener("click", openQr);
+$("qr-close").addEventListener("click", closeQr);
+$("qr-overlay").addEventListener("click", (event) => {
+  if (event.target === event.currentTarget) closeQr();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeQr();
+});
