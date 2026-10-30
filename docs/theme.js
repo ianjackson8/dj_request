@@ -8,6 +8,7 @@ export const DEFAULT_THEME = "party";
 
 const JET = "M48 12 L38 10.4 L28 10 L20 1 L15 1 L19 10 L8 10.4 L3 5 L0 5 L2 12 L0 19 L3 19 L8 13.6 L19 14 L15 23 L20 23 L28 14 L38 13.6 Z";
 const NOTE = "M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z";
+const BAT = "M24 6 L22.5 3.5 L22 7 C20 7 19 8 18.5 9.5 C16 6 11 4 4 5 C7 7 8 9 7.5 11 C10 10 12 11 12.5 13 C14 12 16 12.5 17 14.5 C19 14 21 15.5 24 19 C27 15.5 29 14 31 14.5 C32 12.5 34 12 35.5 13 C36 11 38 10 40.5 11 C40 9 41 7 44 5 C37 4 32 6 29.5 9.5 C29 8 28 7 26 7 L25.5 3.5 Z";
 
 const GOLDEN_GATE = `
   <div class="stars"></div>
@@ -32,6 +33,27 @@ const DANCE_FLOOR = `
   <div class="glow two"></div>
   <div class="eq">${Array.from({ length: 28 }, (_, i) =>
     `<span style="--speed:${0.7 + ((i * 37) % 10) / 10}s;--delay:-${((i * 53) % 10) / 10}s"></span>`).join("")}</div>`;
+
+const GRAVEYARD = `
+  <div class="moon"></div>
+  <div class="bat b1"><svg><use href="#icon"/></svg></div>
+  <div class="bat b2"><svg><use href="#icon"/></svg></div>
+  <div class="bat b3"><svg><use href="#icon"/></svg></div>
+  <div class="fog one"></div>
+  <svg class="graveyard" viewBox="0 0 1000 140" preserveAspectRatio="xMidYMax meet">
+    <path d="M0 140 V104 Q140 84 300 96 Q470 110 620 92 Q800 72 1000 98 V140 Z"/>
+    <path d="M160 104 v-26 a11 11 0 0 1 22 0 v26 Z M222 104 v-18 a8 8 0 0 1 16 0 v18 Z
+             M410 108 v-34 h6 v34 Z M401 82 h24 v6 h-24 Z
+             M560 100 v-24 a10 10 0 0 1 20 0 v24 Z M660 96 v-20 a9 9 0 0 1 18 0 v20 Z
+             M808 94 L813 50 L818 50 L824 92 Z"/>
+    <path class="branches" d="M815 52 L806 26 M815 46 L834 20 M816 60 L844 42 L852 30 M814 66 L794 50 M806 26 L798 18 M834 20 L842 14"/>
+    <g class="pumpkin">
+      <ellipse cx="300" cy="93" rx="12" ry="9.5"/>
+      <path class="face" d="M293 91 l3 -4 l3 4 Z M301 91 l3 -4 l3 4 Z M292 95 Q300 102 308 95 Q300 98 292 95 Z"/>
+      <path class="stem" d="M299 84.5 l1.5 -5 l2.5 1 l-1.5 4.5 Z"/>
+    </g>
+  </svg>
+  <div class="fog two"></div>`;
 
 export const THEMES = {
   party: {
@@ -78,6 +100,52 @@ export const THEMES = {
       failed: "That one didn't work. Try another link?",
     },
     board: { pending: "QUEUED", downloading: "LOADING", done: "READY", failed: "FAILED" },
+  },
+
+  halloween: {
+    name: "Halloween",
+    title: "Summon a Song",
+    color: "#140a1f",
+    favicon: "favicon-halloween.svg",
+    icon: { viewBox: "0 0 48 24", path: BAT },
+    scene: GRAVEYARD,
+    text: {
+      eyebrow: "Halloween · DJ Requests",
+      heading: "Summon a",
+      headingAccent: "Song",
+      lede: "Paste a song link from Spotify, Apple Music, YouTube or SoundCloud and we'll raise it from the dead.",
+      pass: "Ticket",
+      djPass: "Skeleton key",
+      routeFrom: "Crypt",
+      routeTo: "Decks",
+      urlLabel: "Incantation",
+      urlHint: "song link",
+      nameLabel: "Who goes there",
+      nameHint: "optional",
+      namePlaceholder: "Vlad",
+      submit: "Summon it",
+      submitClosed: "Crypt sealed",
+      closedTitle: "The crypt is sealed.",
+      closedBody: "The DJ isn't taking requests right now. Check back soon.",
+      stops: ["Summoned", "Rising", "Risen"],
+      badLink: "That spell fizzled. Use a YouTube, Spotify, Apple Music or SoundCloud link.",
+      sendFailed: "The spirits are silent. Couldn't send your request, try again.",
+      adminTitle: "The Crypt",
+      switchLabel: "Crypt",
+      open: "OPEN",
+      closed: "SEALED",
+      openButton: "Open the crypt",
+      closeButton: "Seal the crypt",
+      boardTitle: "Séance log",
+      boardEmpty: "No spirits yet",
+    },
+    status: {
+      pending: "The spell is cast. Your song waits in the shadows.",
+      downloading: "It's rising from the grave…",
+      done: "It's alive! Your song crawled into the DJ's crate. 🎃",
+      failed: "It stayed dead. Try another link? 💀",
+    },
+    board: { pending: "SUMMONED", downloading: "RISING", done: "RISEN", failed: "DEAD" },
   },
 
   fleetweek: {

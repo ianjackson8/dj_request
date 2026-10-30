@@ -77,6 +77,88 @@ html[data-theme="party"] .tracker:not(.failed):not([data-step="2"]) .track-icon 
   to   { transform: scaleY(1); }
 }
 
+/* ---------- Theme: Halloween ---------- */
+
+html[data-theme="halloween"] {
+  --bg: linear-gradient(180deg, #0a0512 0%, #1c0f2c 50%, #4a2766 88%, #6b3a7a 100%);
+  --primary: #5b2a86;
+  --accent: #ff7a1a;
+  --accent-deep: #b84f00;
+  --on-accent: #1a0d05;
+  --card: #1b1424;
+  --card-ink: #f4ece0;
+  --card-muted: #a497b3;
+  --card-line: #3b2d4a;
+  --input-bg: #120c18;
+  --panel: #140e1cee;
+  --panel-line: #3b2d4a;
+  --muted: #b9abc9;
+  --ok: #8fd14f;
+}
+html[data-theme="halloween"] .eyebrow { color: #8fd14f; }
+html[data-theme="halloween"] .status.ok { color: #c9a0f0; }
+html[data-theme="halloween"] .tracker:not(.failed):not([data-step="2"]) .track-icon { fill: #c9a0f0; }
+
+.moon {
+  /* Low over the graveyard, so it never sits behind the headline. */
+  position: absolute; bottom: calc(max(100vw, 700px) * 0.1 + 4vh); right: 8vw;
+  width: min(26vmin, 220px); height: min(26vmin, 220px); border-radius: 50%;
+  background: radial-gradient(circle at 40% 38%, #fff4d6, #ffd27a 55%, #e89a3c);
+  box-shadow: 0 0 60px 20px #ffb34733, 0 0 160px 60px #ff7a1a22;
+}
+
+/* Bats cross the sky (the div moves) while flapping (the svg squashes). */
+.bat {
+  position: absolute; left: 0; width: 44px; height: 22px;
+  transform: translateX(-80px);
+  animation: flit 16s linear infinite;
+}
+.bat svg {
+  display: block; width: 100%; height: 100%;
+  fill: #08040c; filter: drop-shadow(0 0 3px #ff7a1a66);
+  animation: flap .22s ease-in-out infinite alternate;
+}
+.bat.b1 { bottom: calc(max(100vw, 700px) * 0.1 + 4vh + min(13vmin, 110px)); }
+.bat.b2 { bottom: 42vh; width: 30px; height: 15px; animation-duration: 21s; animation-delay: -7s; }
+.bat.b3 { bottom: 30vh; width: 22px; height: 11px; animation-duration: 27s; animation-delay: -16s; }
+
+@keyframes flap {
+  from { transform: scaleY(1); }
+  to   { transform: scaleY(.35); }
+}
+@keyframes flit {
+  0%   { transform: translate(-80px, 0); }
+  25%  { transform: translate(25vw, 4vh); }
+  50%  { transform: translate(50vw, -2vh); }
+  75%  { transform: translate(75vw, 5vh); }
+  100% { transform: translate(calc(100vw + 80px), 0); }
+}
+
+.graveyard {
+  position: absolute; bottom: 0; left: 50%;
+  width: max(100%, 700px); aspect-ratio: 1000 / 140;
+  transform: translateX(-50%);
+  fill: #07040a;
+}
+.graveyard .branches { fill: none; stroke: #07040a; stroke-width: 3; stroke-linecap: round; }
+.graveyard .pumpkin ellipse { fill: #ff7a1a; filter: drop-shadow(0 0 6px #ff7a1a); }
+.graveyard .pumpkin .face { fill: #3a1500; }
+.graveyard .pumpkin .stem { fill: #4c6b1f; }
+
+.fog {
+  position: absolute; left: -50%; width: 200%; height: 16vh;
+  background: radial-gradient(ellipse at center, #d9c8f02e, transparent 70%);
+  filter: blur(10px);
+  animation: fog 30s ease-in-out infinite alternate;
+}
+.fog.one { bottom: 6vh; }
+.fog.two { bottom: -4vh; animation-duration: 40s; animation-direction: alternate-reverse; }
+
+@keyframes fog {
+  from { transform: translateX(-10%); }
+  to   { transform: translateX(10%); }
+}
+
 /* ---------- Theme: SF Fleet Week ---------- */
 
 html[data-theme="fleetweek"] {
@@ -362,7 +444,8 @@ h3 { font-size: 1rem; margin: 1.4rem 0 .6rem; color: var(--muted); }
 
 @media (prefers-reduced-motion: reduce) {
   .formation { display: none; }
-  .glow, .eq span { animation: none; }
+  .glow, .eq span, .fog, .bat svg { animation: none; }
+  .bat { display: none; }
   .launch-icon.go { animation: none; }
   .track-icon { transition: none; }
 }

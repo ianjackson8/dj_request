@@ -100,6 +100,7 @@ open guest page switches right away.
 | Key | Name | Look |
 |-----|------|------|
 | `party` | Party (generic), the default | Neon dance floor with equalizer bars. "Request → Queued → Ready" |
+| `halloween` | Halloween | Bats across a full moon over a graveyard. "Ticket → Summoned → Risen" |
 | `fleetweek` | SF Fleet Week | Blue Angels over the Golden Gate. "Boarding pass → Tower → Landed" |
 
 To add a theme:

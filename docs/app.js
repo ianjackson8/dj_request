@@ -6,13 +6,13 @@ import {
 import {
   getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { firebaseConfig } from "./firebase-config.js?v=20261030135055";
+import { firebaseConfig } from "./firebase-config.js?v=20261030135925";
 import {
   THEMES, applyTheme, currentTheme, currentThemeKey,
-} from "./theme.js?v=20261030135055";
+} from "./theme.js?v=20261030135925";
 
 // Stamped by scripts/stamp-version.sh; must match docs/version.json when deployed.
-const APP_VERSION = "20261030135055";
+const APP_VERSION = "20261030135925";
 
 // Typing this into the link field opens the admin panel. It only reveals the
 // panel; actually using it requires a Google account with the admin claim.
