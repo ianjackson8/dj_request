@@ -15,6 +15,7 @@ paste a link to download it as a DJ request (playlists and albums allowed).
 
 import argparse
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from html import unescape
 import logging
@@ -36,7 +37,7 @@ os.environ.setdefault("GRPC_VERBOSITY", "ERROR")
 log = logging.getLogger("dj_helper")
 
 COLLECTION = "requests"
-STATE_DOC = ("config", "state")  # {accepting: bool}; guests can only submit while true
+STATE_DOC = ("config", "state")  # {accepting: bool, theme: str}; guests can only submit while accepting
 DOWNLOAD_TIMEOUT_S = 300
 COLLECTION_TIMEOUT_S = 3600  # DJ-only playlists/albums
 AUDIO_EXTS = {".m4a", ".mp3", ".opus", ".ogg", ".webm", ".flac", ".wav", ".aac", ".mp4"}
@@ -289,9 +290,138 @@ def unique_path(path: Path) -> Path:
     return candidate
 
 
+# --- duplicate protection ----------------------------------------------------
+
+DUPLICATE_TOLERANCE_S = 5  # radio edits / extended mixes differ by more than this
+DEFAULT_LIBRARY = Path.home() / "Documents" / "Music"
+
+
+@dataclass(frozen=True)
+class TrackInfo:
+    artist: str
+    title: str
+    duration: float
+
+
+def probe(path: Path) -> TrackInfo:
+    """Artist, title and duration, from container or stream tags (Opus keeps them on the stream)."""
+    proc = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries",
+         "format=duration:format_tags=artist,title:stream_tags=artist,title", "-of", "json", str(path)],
+        capture_output=True, text=True,
+    )
+    try:
+        data = json.loads(proc.stdout)
+    except ValueError:
+        return TrackInfo("", "", 0.0)
+    fmt = data.get("format", {})
+    stream_tags = (data.get("streams") or [{}])[0].get("tags", {})
+    tags = {k.lower(): v for k, v in {**stream_tags, **fmt.get("tags", {})}.items()}
+    try:
+        duration = float(fmt.get("duration", 0))
+    except ValueError:
+        duration = 0.0
+    return TrackInfo(tags.get("artist", ""), tags.get("title", ""), duration)
+
+
+def artist_names(artist: str) -> set[str]:
+    """'Pluto & YoungBoy Never Broke Again' -> {'pluto', 'youngboyneverbrokeagain'}."""
+    artist = re.sub(r"(\s-\stopic|vevo)$", "", artist.strip().lower())  # YouTube channel names
+    parts = re.split(r",|&|;|/|\bfeat\.?|\bft\.?|\bx\b|\bwith\b|\band\b", artist)
+    return {re.sub(r"[^a-z0-9]", "", part) for part in parts} - {""}
+
+
+def match_keys(info: TrackInfo) -> set[tuple[str, str]]:
+    """(artist, base title) pairs a track could be known by."""
+    candidates = [(info.artist, info.title)]
+    if " - " in info.title:  # YouTube/SoundCloud style: "Artist - Title (Official Video)"
+        candidates.append(tuple(info.title.split(" - ", 1)))
+    keys = set()
+    for artist, title in candidates:
+        if base := base_title(title):
+            keys |= {(name, base) for name in artist_names(artist)}
+    return keys
+
+
+class Library:
+    """Every track already in your music folders (including hand-added files and DJ
+    playlists), so the same song is never saved twice. What's been read is cached
+    on disk, so restarts only probe new or changed files."""
+
+    EXTS = AUDIO_EXTS | {".aiff", ".aif"}
+
+    def __init__(self, roots: list[Path], cache_path: Path | None = None):
+        self.roots = roots
+        self.cache_path = cache_path
+        self.tracks: dict[Path, tuple[float, TrackInfo, set]] = {}
+        if cache_path and cache_path.exists():
+            try:
+                for path, (mtime, artist, title, duration) in json.loads(cache_path.read_text()).items():
+                    info = TrackInfo(artist, title, duration)
+                    self.tracks[Path(path)] = (mtime, info, match_keys(info))
+            except (ValueError, TypeError):
+                log.warning("ignoring unreadable library cache %s", cache_path)
+
+    def refresh(self) -> None:
+        """Pick up added/changed/removed files; only new or changed ones are probed."""
+        found: dict[Path, float] = {}
+        for root in self.roots:
+            for path in root.rglob("*"):
+                if path.suffix.lower() in self.EXTS and not path.name.startswith("."):
+                    try:
+                        found[path] = path.stat().st_mtime
+                    except OSError:
+                        continue
+        stale = [path for path, mtime in found.items()
+                 if path not in self.tracks or self.tracks[path][0] != mtime]
+        if len(stale) > 20:
+            log.info("reading tags of %d track(s) in your library…", len(stale))
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            probed = dict(zip(stale, pool.map(probe, stale)))
+        current = {}
+        for path, mtime in found.items():
+            if path in probed:
+                current[path] = (mtime, probed[path], match_keys(probed[path]))
+            else:
+                current[path] = self.tracks[path]
+        changed = bool(stale) or current.keys() != self.tracks.keys()
+        self.tracks = current
+        if changed:
+            self._save()
+
+    def add(self, path: Path) -> None:
+        info = probe(path)
+        self.tracks[path] = (path.stat().st_mtime, info, match_keys(info))
+        self._save()
+
+    def find(self, info: TrackInfo) -> Path | None:
+        keys = match_keys(info)
+        if not keys or not info.duration:
+            return None
+        for path, (_, other, other_keys) in self.tracks.items():
+            if keys & other_keys and abs(info.duration - other.duration) <= DUPLICATE_TOLERANCE_S:
+                return path
+        return None
+
+    def _save(self) -> None:
+        if not self.cache_path:
+            return
+        data = {str(path): [mtime, info.artist, info.title, info.duration]
+                for path, (mtime, info, _) in self.tracks.items()}
+        tmp = self.cache_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data))
+        tmp.replace(self.cache_path)
+
+
+@dataclass
+class Saved:
+    path: Path
+    duplicate: bool  # True: already in the crate, nothing new was written
+
+
 def fetch(url: str, out_dir: Path, cookies: Path | None,
-          allow_collections: bool = False) -> list[Path]:
-    """Download a link and return the AIFF files written to out_dir.
+          allow_collections: bool = False, library: Library | None = None) -> list[Saved]:
+    """Download a link into out_dir as AIFF, skipping songs already in the crate.
 
     Guests get exactly one song. With allow_collections (DJ requests), playlists,
     albums and sets are downloaded too.
@@ -318,7 +448,20 @@ def fetch(url: str, out_dir: Path, cookies: Path | None,
         if len(sources) > 1 and not collection:
             # Should be impossible after the link checks; refuse rather than flood the crate.
             raise RejectedLink("playlist", f"link produced {len(sources)} tracks, one song per request")
-        return [to_aiff(src, out_dir) for src in sources]
+
+        library = library or Library([out_dir])
+        library.refresh()
+        saved = []
+        for src in sources:
+            existing = library.find(probe(src))
+            if existing:
+                log.info("  ↺ already in your library: %s/%s", existing.parent.name, existing.name)
+                saved.append(Saved(existing, duplicate=True))
+                continue
+            dest = to_aiff(src, out_dir)
+            library.add(dest)
+            saved.append(Saved(dest, duplicate=False))
+        return saved
 
 
 # --- notifications -----------------------------------------------------------
@@ -358,14 +501,15 @@ def grant_admin(credentials_path: Path, email: str) -> None:
     init_firebase(credentials_path)
     user = auth.get_user_by_email(email)
     auth.set_custom_user_claims(user.uid, {"admin": True})
-    print(f"{email} is now cleared for the control tower. Reload the page to pick it up.")
+    print(f"{email} is now an admin. Reload the page to pick it up.")
 
 
 def set_accepting(state_ref, accepting: bool) -> None:
     from firebase_admin import firestore
 
+    # Merge, so pausing from the terminal keeps the theme picked on the site.
     state_ref.set({"accepting": accepting, "updatedAt": firestore.SERVER_TIMESTAMP,
-                   "updatedBy": "helper"})
+                   "updatedBy": "helper"}, merge=True)
 
 
 def console_commands(state_ref, jobs: queue.Queue) -> None:
@@ -380,10 +524,10 @@ def console_commands(state_ref, jobs: queue.Queue) -> None:
         elif cmd in ("r", "resume"):
             set_accepting(state_ref, True)
         elif cmd in ("s", "status"):
-            snap = state_ref.get()
-            open_ = (snap.to_dict() or {}).get("accepting", True) if snap.exists else True
-            log.info("airspace %s · %d request(s) waiting",
-                     "OPEN" if open_ else "CLOSED", jobs.qsize())
+            data = (state_ref.get().to_dict() or {})
+            log.info("requests %s · theme %s · %d request(s) waiting",
+                     "OPEN" if data.get("accepting", True) else "PAUSED",
+                     data.get("theme", "default"), jobs.qsize())
         elif cmd:
             log.info("commands: paste a link = DJ request (playlists OK), p = pause requests, "
                      "r = resume, s = status, Ctrl+C = quit")
@@ -404,7 +548,7 @@ def summarize(names: list[str]) -> str:
 
 
 def listen(out_dir: Path, credentials_path: Path, cookies: Path | None,
-           notifier: Notifier) -> None:
+           notifier: Notifier, library: "Library") -> None:
     from firebase_admin import firestore
     from google.cloud.firestore_v1.base_query import FieldFilter
 
@@ -418,6 +562,10 @@ def listen(out_dir: Path, credentials_path: Path, cookies: Path | None,
     for snap in requests.where(filter=FieldFilter("status", "==", "downloading")).stream():
         log.info("re-queuing interrupted request %s", snap.id)
         snap.reference.update({"status": "pending"})
+
+    library.refresh()
+    log.info("library has %d track(s) in %s; duplicates won't be downloaded again",
+             len(library.tracks), ", ".join(str(r) for r in library.roots))
 
     jobs: queue.Queue = queue.Queue()
     seen: set[str] = set()
@@ -435,7 +583,7 @@ def listen(out_dir: Path, credentials_path: Path, cookies: Path | None,
     def on_state(docs, _changes, _read_time):
         data = (docs[0].to_dict() or {}) if docs and docs[0].exists else {}
         open_ = data.get("accepting", True)
-        log.info("✈ airspace %s%s", "OPEN — taking requests" if open_ else "CLOSED — requests paused",
+        log.info("requests %s%s", "OPEN" if open_ else "PAUSED",
                  f" (by {data['updatedBy']})" if data.get("updatedBy") else "")
 
     watches = [
@@ -458,7 +606,7 @@ def listen(out_dir: Path, credentials_path: Path, cookies: Path | None,
             log.info("▶ %s (from %s%s)", job.url, job.who, ", DJ" if job.dj else "")
             update(job, {"status": "downloading", "startedAt": firestore.SERVER_TIMESTAMP})
             try:
-                files = fetch(job.url, out_dir, cookies, allow_collections=job.dj)
+                saved = fetch(job.url, out_dir, cookies, allow_collections=job.dj, library=library)
             except RejectedLink as exc:
                 log.warning("⛔ %s: %s", job.url, exc)
                 update(job, {"status": "failed", "reason": exc.reason, "error": str(exc),
@@ -467,13 +615,20 @@ def listen(out_dir: Path, credentials_path: Path, cookies: Path | None,
                 log.error("✗ %s: %s", job.url, exc)
                 update(job, {"status": "failed", "error": str(exc)[:500],
                              "finishedAt": firestore.SERVER_TIMESTAMP})
-                notifier.send("⚠️ Mayday — request failed", f"from {job.who}", job.url)
+                notifier.send("⚠️ Request failed", f"from {job.who}", job.url)
             else:
-                names = [f.stem for f in files]
-                log.info("✓ %s", ", ".join(names))
-                update(job, {"status": "done", "files": [f.name for f in files],
-                             "finishedAt": firestore.SERVER_TIMESTAMP})
-                notifier.send("✈️ Touchdown", f"from {job.who}", summarize(names))
+                new = [r.path.stem for r in saved if not r.duplicate]
+                dupes = [r.path.stem for r in saved if r.duplicate]
+                log.info("✓ %s%s", ", ".join(new) or "nothing new",
+                         f" ({len(dupes)} already in crate)" if dupes else "")
+                update(job, {"status": "done", "files": [r.path.name for r in saved],
+                             "duplicates": len(dupes), "finishedAt": firestore.SERVER_TIMESTAMP})
+                if new:
+                    notifier.send("🎵 Downloaded", f"from {job.who}", summarize(new) +
+                                  (f" (+{len(dupes)} already in crate)" if dupes else ""))
+                else:
+                    # Still worth knowing someone wants it, even though nothing downloaded.
+                    notifier.send("🎵 Already in your crate", f"requested by {job.who}", summarize(dupes))
     except KeyboardInterrupt:
         log.info("stopping")
     finally:
@@ -497,10 +652,13 @@ def main() -> None:
     parser.add_argument("--test", metavar="URL",
                         help="download a single link and exit, without Firebase")
     parser.add_argument("--grant-admin", metavar="EMAIL",
-                        help="let this Google account use the site's control tower, then exit")
+                        help="let this Google account use the site's admin panel, then exit")
     parser.add_argument("--no-notify", action="store_true", help="disable macOS notifications")
     parser.add_argument("--notify-sound", action="store_true",
                         help="play a chime with notifications (careful: may hit the PA)")
+    parser.add_argument("--library", type=Path, action="append",
+                        help="music folder to check for duplicates; repeatable "
+                             "(default: ~/Documents/Music). The output folder is always checked.")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -516,10 +674,16 @@ def main() -> None:
     out_dir = args.out_dir.expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    roots = [r.expanduser().resolve() for r in (args.library or [DEFAULT_LIBRARY])]
+    roots = [r for r in roots if r.is_dir()]
+    if not any(out_dir == r or out_dir.is_relative_to(r) for r in roots):
+        roots.append(out_dir)
+    library = Library(roots, here / ".library-cache.json")
+
     if args.test:
         try:
-            for f in fetch(args.test, out_dir, args.cookies, allow_collections=True):
-                print(f)
+            for r in fetch(args.test, out_dir, args.cookies, allow_collections=True, library=library):
+                print(f"{r.path}  (already in crate)" if r.duplicate else r.path)
         except RejectedLink as exc:
             sys.exit(f"rejected ({exc.reason}): {exc}")
         return
@@ -527,7 +691,7 @@ def main() -> None:
     if not args.credentials.exists():
         parser.error(f"service account file not found: {args.credentials}")
     listen(out_dir, args.credentials, args.cookies,
-           Notifier(enabled=not args.no_notify, sound=args.notify_sound))
+           Notifier(enabled=not args.no_notify, sound=args.notify_sound), library)
 
 
 if __name__ == "__main__":

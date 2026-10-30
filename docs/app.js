@@ -6,14 +6,17 @@ import {
 import {
   getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { firebaseConfig } from "./firebase-config.js?v=20261005201116";
+import { firebaseConfig } from "./firebase-config.js?v=20261030135055";
+import {
+  THEMES, applyTheme, currentTheme, currentThemeKey,
+} from "./theme.js?v=20261030135055";
 
 // Stamped by scripts/stamp-version.sh; must match docs/version.json when deployed.
-const APP_VERSION = "20261005201116";
+const APP_VERSION = "20261030135055";
 
-// Typing this into the link field opens the control tower. It only reveals the
+// Typing this into the link field opens the admin panel. It only reveals the
 // panel; actually using it requires a Google account with the admin claim.
-const TOWER_CODE = "tower";
+const ADMIN_CODE = "admin";
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
@@ -29,13 +32,9 @@ const PLATFORMS = {
   spotify: /^https:\/\/(open\.spotify\.com|spotify\.link)\/\S+$/,
 };
 
-const STATUS = {
-  pending: { step: 0, text: "Tower copies. You're in the holding pattern." },
-  downloading: { step: 1, text: "Wheels up! Your track is inbound." },
-  done: { step: 2, text: "Touchdown. Your song landed in the DJ's hangar. 🎶" },
-  failed: { step: 1, text: "Mayday! That track couldn't land. Try another link?", error: true },
-};
-const CLOSED_TEXT = "Airspace closed. The DJ isn't taking requests right now.";
+// Where each status puts the tracker. The wording comes from the theme.
+const STATUS_STEP = { pending: 0, downloading: 1, done: 2, failed: 1 };
+const closedText = () => `${currentTheme().text.closedTitle} ${currentTheme().text.closedBody}`;
 
 const $ = (id) => document.getElementById(id);
 const form = $("request-form");
@@ -45,13 +44,16 @@ const submitBtn = $("submit");
 const statusEl = $("status");
 const tracker = $("tracker");
 const closedBanner = $("closed-banner");
-const launchJet = document.querySelector(".launch-jet");
+const launchIcon = document.querySelector(".launch-icon");
 
 let accepting = true;
 // True while signed in with the admin claim: requests are marked as DJ
 // requests, which the helper lets be playlists or albums.
 let isDj = false;
 let unsubscribeRequest = null;
+// Kept so the page can be redrawn in the new wording when the theme changes.
+let lastStatus = null;
+let lastBoard = null;
 
 // ---------- Stay up to date ----------
 // GitHub Pages lets browsers cache files for 10 minutes, so a tab (or a cached
@@ -65,7 +67,7 @@ async function checkForUpdate() {
   try {
     const res = await fetch(`version.json?t=${Date.now()}`, { cache: "no-store" });
     const { version } = await res.json();
-    const busy = urlInput.value.trim() !== "" || !tower.hidden;
+    const busy = urlInput.value.trim() !== "" || !adminPanel.hidden;
     // The ?v= guard stops a reload loop if the CDN is still serving old files.
     if (version && version !== APP_VERSION && !busy && params.get("v") !== version) {
       location.replace(`${location.pathname}?v=${version}`);
@@ -87,36 +89,37 @@ function detectPlatform(url) {
 }
 
 function showProgress(status) {
-  const info = STATUS[status];
-  if (!info) return;
+  if (!(status in STATUS_STEP)) return;
+  lastStatus = status;
+  const failed = status === "failed";
   tracker.hidden = false;
-  tracker.dataset.step = info.step;
-  tracker.classList.toggle("failed", Boolean(info.error));
-  setStatus(info.text, info.error ? "error" : "ok");
+  tracker.dataset.step = STATUS_STEP[status];
+  tracker.classList.toggle("failed", failed);
+  setStatus(currentTheme().status[status], failed ? "error" : "ok");
 }
 
 function takeoff() {
-  launchJet.classList.remove("go");
-  void launchJet.offsetWidth; // restart the animation
-  launchJet.classList.add("go");
+  launchIcon.classList.remove("go");
+  void launchIcon.offsetWidth; // restart the animation
+  launchIcon.classList.add("go");
 }
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const url = urlInput.value.trim();
 
-  if (url.toLowerCase() === TOWER_CODE) {
+  if (url.toLowerCase() === ADMIN_CODE) {
     form.reset();
-    openTower();
+    openAdmin();
     return;
   }
   if (!accepting) {
-    setStatus(CLOSED_TEXT, "error");
+    setStatus(closedText(), "error");
     return;
   }
   const platform = detectPlatform(url);
   if (!platform) {
-    setStatus("That flight plan won't fly. Use a YouTube, Spotify, Apple Music or SoundCloud link.", "error");
+    setStatus(currentTheme().text.badLink, "error");
     return;
   }
 
@@ -138,54 +141,83 @@ form.addEventListener("submit", async (event) => {
   } catch (err) {
     console.error(err);
     setStatus(err.code === "permission-denied" && !accepting
-      ? CLOSED_TEXT
-      : "Radio trouble. Couldn't send your request, try again.", "error");
+      ? closedText()
+      : currentTheme().text.sendFailed, "error");
   } finally {
     submitBtn.disabled = false;
   }
 });
 
-// ---------- Airspace (pause / resume) ----------
+// ---------- Shared state: open / paused, and the theme ----------
 
-onSnapshot(stateRef, (snap) => {
-  accepting = snap.exists() ? snap.data().accepting !== false : true;
+function renderAccepting() {
+  const { text } = currentTheme();
   closedBanner.hidden = accepting;
   form.classList.toggle("closed", !accepting);
-  submitBtn.textContent = accepting ? "Cleared for takeoff" : "Airspace closed";
+  submitBtn.textContent = accepting ? text.submit : text.submitClosed;
 
-  const airspace = document.querySelector(".airspace");
-  airspace.dataset.open = accepting;
-  $("airspace-state").textContent = accepting ? "OPEN" : "CLOSED";
-  $("toggle").textContent = accepting ? "Close airspace" : "Open airspace";
-}, (err) => console.error("airspace listener", err));
+  document.querySelector(".switch").dataset.open = accepting;
+  $("switch-state").textContent = accepting ? text.open : text.closed;
+  $("toggle").textContent = accepting ? text.closeButton : text.openButton;
+}
 
-// ---------- Control tower ----------
+// Redraw everything whose wording comes from the theme.
+function renderAll() {
+  renderAccepting();
+  setDj(isDj);
+  if (lastStatus) showProgress(lastStatus);
+  if (lastBoard) renderBoard(lastBoard);
+  themeSelect.value = currentThemeKey();
+}
+
+const themeSelect = $("theme-select");
+for (const [key, theme] of Object.entries(THEMES)) {
+  themeSelect.add(new Option(theme.name, key));
+}
+renderAll();
+
+onSnapshot(stateRef, (snap) => {
+  const data = snap.exists() ? snap.data() : {};
+  accepting = data.accepting !== false;
+  applyTheme(data.theme);
+  renderAll();
+}, (err) => console.error("state listener", err));
+
+// Merge, so pausing doesn't reset the theme and vice versa. `accepting` is
+// always sent because the rules require it.
+function saveState(fields) {
+  return setDoc(stateRef, {
+    accepting, ...fields, updatedAt: serverTimestamp(), updatedBy: "admin",
+  }, { merge: true });
+}
+
+// ---------- Admin panel ----------
 
 const guest = $("guest");
-const tower = $("tower");
+const adminPanel = $("admin");
 
 checkForUpdate();
 setInterval(checkForUpdate, 60_000);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") checkForUpdate();
 });
-const towerMsg = $("tower-msg");
+const adminMsg = $("admin-msg");
 let unsubscribeBoard = null;
 
-function openTower() {
+function openAdmin() {
   guest.hidden = true;
-  tower.hidden = false;
+  adminPanel.hidden = false;
 }
 
-$("tower-exit").addEventListener("click", () => {
-  tower.hidden = true;
+$("admin-exit").addEventListener("click", () => {
+  adminPanel.hidden = true;
   guest.hidden = false;
 });
 
 $("sign-in").addEventListener("click", () => {
-  towerMsg.textContent = "";
+  adminMsg.textContent = "";
   signInWithPopup(auth, new GoogleAuthProvider()).catch((err) => {
-    towerMsg.textContent = `Sign-in failed: ${err.message}`;
+    adminMsg.textContent = `Sign-in failed: ${err.message}`;
   });
 });
 
@@ -194,51 +226,65 @@ $("sign-out").addEventListener("click", () => signOut(auth));
 $("toggle").addEventListener("click", async (event) => {
   event.target.disabled = true;
   try {
-    await setDoc(stateRef, {
-      accepting: !accepting, updatedAt: serverTimestamp(), updatedBy: "tower",
-    });
+    await saveState({ accepting: !accepting });
   } catch (err) {
-    towerMsg.textContent = `Couldn't change airspace: ${err.message}`;
+    adminMsg.textContent = `Couldn't change requests: ${err.message}`;
   } finally {
     event.target.disabled = false;
   }
 });
 
+themeSelect.addEventListener("change", async () => {
+  themeSelect.disabled = true;
+  try {
+    await saveState({ theme: themeSelect.value });
+  } catch (err) {
+    adminMsg.textContent = `Couldn't change theme: ${err.message}`;
+    themeSelect.value = currentThemeKey();
+  } finally {
+    themeSelect.disabled = false;
+  }
+});
+
 function setDj(on) {
   isDj = on;
-  $("pass-type").textContent = on ? "Captain's pass" : "Boarding pass";
+  const { text } = currentTheme();
+  $("pass-type").textContent = on ? text.djPass : text.pass;
 }
 
 onAuthStateChanged(auth, async (user) => {
   setDj(false);
   unsubscribeBoard?.();
   unsubscribeBoard = null;
+  lastBoard = null;
   $("sign-out").hidden = !user;
-  $("tower-auth").hidden = Boolean(user);
-  $("tower-controls").hidden = true;
-  towerMsg.textContent = "";
+  $("admin-auth").hidden = Boolean(user);
+  $("admin-controls").hidden = true;
+  adminMsg.textContent = "";
   if (!user) return;
 
   // Force a refresh so a freshly granted admin claim is picked up.
   const token = await user.getIdTokenResult(true);
   setDj(Boolean(token.claims.admin));
   if (!token.claims.admin) {
-    towerMsg.innerHTML = "Signed in as <b></b>, but you're not cleared for the tower. " +
+    adminMsg.innerHTML = "Signed in as <b></b>, but this account isn't an admin. " +
       "On the laptop, run <code></code> then reload.";
-    towerMsg.querySelector("b").textContent = user.email;
-    towerMsg.querySelector("code").textContent =
+    adminMsg.querySelector("b").textContent = user.email;
+    adminMsg.querySelector("code").textContent =
       `python helper/dj_helper.py --grant-admin ${user.email}`;
     return;
   }
 
-  $("tower-controls").hidden = false;
+  $("admin-controls").hidden = false;
   const recent = query(collection(db, "requests"), orderBy("createdAt", "desc"), limit(25));
   unsubscribeBoard = onSnapshot(recent, renderBoard, (err) => {
-    towerMsg.textContent = `Departures board unavailable: ${err.message}`;
+    adminMsg.textContent = `Request list unavailable: ${err.message}`;
   });
 });
 
 function renderBoard(snap) {
+  lastBoard = snap;
+  const { text, board: labels } = currentTheme();
   const board = $("board");
   board.replaceChildren();
   if (snap.empty) {
@@ -246,7 +292,7 @@ function renderBoard(snap) {
     const cell = row.insertCell();
     cell.colSpan = 4;
     cell.className = "empty";
-    cell.textContent = "No flights yet";
+    cell.textContent = text.boardEmpty;
     return;
   }
   for (const docSnap of snap.docs) {
@@ -259,7 +305,7 @@ function renderBoard(snap) {
     row.insertCell().textContent = data.requester || "—";
     const status = row.insertCell();
     status.className = `st-${data.status}`;
-    status.textContent = { pending: "HOLDING", downloading: "INBOUND", done: "LANDED", failed: "MAYDAY" }[data.status] ?? data.status;
+    status.textContent = labels[data.status] ?? data.status;
     const track = row.insertCell();
     track.className = "track-cell";
     track.textContent = data.files?.[0]?.replace(/\.aiff$/, "") || data.url;

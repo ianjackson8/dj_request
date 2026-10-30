@@ -13,7 +13,7 @@ Guest phone → GitHub Pages form (docs/) → Firestore "requests"
 ```
 
 Each request moves through `pending → downloading → done | failed`, and the
-guest's page shows the status live as a flight tracker (Tower → In flight → Landed).
+guest's page shows the status live as a tracker (wording depends on the theme).
 Each finished download also pops up a macOS notification with the song and who asked for it.
 
 | Service      | How it's downloaded | Single-song links accepted |
@@ -30,13 +30,23 @@ refused.
 
 **DJ requests can be playlists.** Playlists, albums and SoundCloud sets are
 allowed when the request comes from you:
-- **On the site:** sign in to the Control Tower with your admin account. The
-  form header changes to "Captain's pass", and your requests are marked as DJ
+- **On the site:** sign in to the admin panel with your admin account. The
+  form header changes (e.g. "DJ pass"), and your requests are marked as DJ
   requests. Firestore rules only accept that mark from an admin account.
 - **On the laptop:** paste a link into the helper's terminal and press Enter.
 
 Artist pages and profiles are still refused, even for DJ requests. Spotify
 playlists and albums download through spotDL (YouTube audio).
+
+**Duplicate protection.** Before saving, the helper checks your whole music
+library (`~/Documents/Music` by default; use `--library DIR` to change it, more
+than once for several folders). That includes songs from your own playlists
+and files you added by hand. If the same song is already there, it isn't
+saved again. A match means the same artist, the same base title (ignoring
+"(Official Video)", "- Remastered", "feat." and so on), and a length within
+5 seconds, so a radio edit and an extended mix are both kept. The guest still
+sees "Landed", and you get an "Already in your crate" notification. What's
+been read is cached in `helper/.library-cache.json`, so restarts are instant.
 
 SoundCloud Go+ tracks only offer a 30-second preview. The helper refuses
 these instead of saving a clip.
@@ -53,7 +63,7 @@ these instead of saving a clip.
    as `helper/service-account.json`. It's gitignored, so never commit it.
 6. **Build → Authentication → Get started → Google**: enable it. Under
    **Settings → Authorized domains**, add `iansjackson.com`. This is only needed
-   for the control tower.
+   for the admin panel.
 
 ### 2. GitHub Pages
 Repo **Settings → Pages → Deploy from a branch → `main` / `/docs`**.
@@ -81,16 +91,36 @@ Requests sent while the helper is off are picked up as soon as it starts.
 Notifications are silent by default. Add `--notify-sound` for a chime (check it
 won't play through the PA), or use `--no-notify` to turn them off.
 
-## Pausing requests ("closing the airspace")
+## Themes
 
-When paused, the page shows "Airspace closed" and Firestore rejects new requests.
+Each gig can have its own look. The theme sets the page's wording, colours,
+icon and background. Pick one from the **Theme** menu in the admin panel. Every
+open guest page switches right away.
+
+| Key | Name | Look |
+|-----|------|------|
+| `party` | Party (generic), the default | Neon dance floor with equalizer bars. "Request → Queued → Ready" |
+| `fleetweek` | SF Fleet Week | Blue Angels over the Golden Gate. "Boarding pass → Tower → Landed" |
+
+To add a theme:
+1. Add an entry to `THEMES` in `docs/theme.js`. Copy an existing one and
+   change the text, icon path, scene markup and favicon.
+2. Add a `html[data-theme="<key>"]` block to `docs/style.css` that sets the
+   colour tokens (`--bg`, `--accent`, `--card`…) and any styles for the scene.
+
+The theme is stored in Firestore at `config/state.theme`. Pausing from the
+helper keeps it.
+
+## Pausing requests
+
+When paused, the page shows a "paused" banner and Firestore rejects new requests.
 Requests already in the queue still download.
 
 - **From the laptop:** in the helper's terminal, type `p` + Enter to pause, `r` to
   resume, or `s` for status. Paste a link to queue it as a DJ request.
-- **From any browser:** type `tower` into the song-link field and submit. This
-  opens the Control Tower, which has a pause/resume switch and a live departures
-  board. Sign in with Google. The first time, grant your account access from
+- **From any browser:** type `admin` into the song-link field and submit. This
+  opens the admin panel, which has a pause/resume switch, the theme picker and
+  a live list of requests. Sign in with Google. The first time, grant your account access from
   the laptop, then reload the page:
 
   ```sh
@@ -98,7 +128,7 @@ Requests already in the queue still download.
   ```
 
   The code only reveals the panel. Only accounts granted admin can use it.
-  To change the code, edit `TOWER_CODE` in `docs/app.js`.
+  To change the code, edit `ADMIN_CODE` in `docs/app.js`.
 
 Test a download without Firebase:
 

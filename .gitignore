@@ -5,4 +5,5 @@ helper/service-account.json
 .venv/
 __pycache__/
 cookies.txt
+helper/.library-cache.json
 .DS_Store

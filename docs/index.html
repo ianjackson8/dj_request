@@ -3,111 +3,99 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0a1633">
-  <title>Fleet Week Requests</title>
-  <link rel="icon" href="favicon.svg?v=20261005201116" type="image/svg+xml">
-  <link rel="icon" href="favicon-32.png?v=20261005201116" sizes="32x32" type="image/png">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=20261005201116">
+  <meta name="theme-color" content="#120a24">
+  <title>Request a Song</title>
+  <link rel="icon" href="favicon.svg?v=20261030135055" type="image/svg+xml">
+  <link rel="icon" href="favicon-32.png?v=20261030135055" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=20261030135055">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261005201116">
+  <link rel="stylesheet" href="style.css?v=20261030135055">
 </head>
 <body>
-  <!-- Reusable jet silhouette, nose pointing right. -->
+  <!-- The theme's icon (a jet, a music note…). theme.js fills in the shape. -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
-    <symbol id="jet" viewBox="0 0 48 24">
-      <path d="M48 12 L38 10.4 L28 10 L20 1 L15 1 L19 10 L8 10.4 L3 5 L0 5 L2 12 L0 19 L3 19 L8 13.6 L19 14 L15 23 L20 23 L28 14 L38 13.6 Z"/>
-    </symbol>
+    <symbol id="icon" viewBox="0 0 24 24"><path d=""/></symbol>
   </svg>
 
-  <div class="sky" aria-hidden="true">
-    <div class="stars"></div>
-    <div class="formation">
-      <div class="plane lead"><span class="trail short"></span><svg class="jet"><use href="#jet"/></svg></div>
-      <div class="plane left"><span class="trail"></span><svg class="jet"><use href="#jet"/></svg></div>
-      <div class="plane right"><span class="trail"></span><svg class="jet"><use href="#jet"/></svg></div>
-      <div class="plane slot"><span class="trail"></span><svg class="jet"><use href="#jet"/></svg></div>
-    </div>
-    <svg class="bridge" viewBox="0 0 1000 140" preserveAspectRatio="xMidYMax meet">
-      <path class="hangers" d="M144 96V100 M170 90V100 M194 81V100 M215 70V100 M234 56V100 M275 51V100 M300 60V100 M325 69V100 M350 76V100 M375 82V100 M400 87V100 M425 91V100 M450 94V100 M475 95V100 M500 96V100 M525 95V100 M550 94V100 M575 91V100 M600 87V100 M625 82V100 M650 76V100 M675 69V100 M700 60V100 M725 51V100 M766 56V100 M785 70V100 M806 81V100 M830 90V100 M856 96V100"/>
-      <path class="cable" d="M115 100 Q205 92 250 40 Q500 152 750 40 Q795 92 885 100"/>
-      <path class="tower" d="M243 140 L245 34 L255 34 L257 140 Z"/>
-      <path class="tower" d="M743 140 L745 34 L755 34 L757 140 Z"/>
-      <rect class="deck" x="0" y="100" width="1000" height="5"/>
-      <rect class="water" x="0" y="116" width="1000" height="24"/>
-    </svg>
-  </div>
+  <!-- Background scene, filled in by theme.js. -->
+  <div class="scene" aria-hidden="true"></div>
 
-  <svg class="launch-jet" aria-hidden="true"><use href="#jet"/></svg>
+  <svg class="launch-icon" aria-hidden="true"><use href="#icon"/></svg>
 
   <main>
     <header class="brand">
-      <p class="eyebrow">SF Fleet Week · DJ Control</p>
-      <h1>Request a <span>Song</span></h1>
-      <p class="lede">Paste a song link from Spotify, Apple Music, YouTube or SoundCloud and we'll get it airborne.</p>
+      <p class="eyebrow" data-text="eyebrow"></p>
+      <h1><span data-text="heading"></span> <span class="accent" data-text="headingAccent"></span></h1>
+      <p class="lede" data-text="lede"></p>
     </header>
 
     <section id="guest" class="ticket">
       <div class="ticket-head">
-        <span id="pass-type">Boarding pass</span>
-        <span class="route">CROWD <svg class="mini-jet"><use href="#jet"/></svg> DECKS</span>
+        <span id="pass-type"></span>
+        <span class="route"><span data-text="routeFrom"></span> <svg class="mini-icon"><use href="#icon"/></svg> <span data-text="routeTo"></span></span>
       </div>
 
       <p id="closed-banner" class="closed-banner" hidden>
-        <strong>Airspace closed.</strong> The DJ isn't taking requests right now. Check back soon.
+        <strong data-text="closedTitle"></strong> <span data-text="closedBody"></span>
       </p>
 
       <form id="request-form" autocomplete="off">
         <label>
-          <span class="field-label">Flight plan <small>song link</small></span>
+          <span class="field-label"><span data-text="urlLabel"></span> <small data-text="urlHint"></small></span>
           <input id="url" type="text" inputmode="url" autocapitalize="off" spellcheck="false"
                  placeholder="https://youtu.be/…" required>
         </label>
         <label>
-          <span class="field-label">Callsign <small>your name, optional</small></span>
-          <input id="requester" type="text" placeholder="Maverick" maxlength="40">
+          <span class="field-label"><span data-text="nameLabel"></span> <small data-text="nameHint"></small></span>
+          <input id="requester" type="text" data-placeholder="namePlaceholder" maxlength="40">
         </label>
-        <button id="submit" type="submit">Cleared for takeoff</button>
+        <button id="submit" type="submit"></button>
       </form>
 
       <div class="perforation"></div>
 
       <div id="tracker" class="tracker" data-step="0" hidden>
-        <div class="track"><svg class="track-jet"><use href="#jet"/></svg></div>
+        <div class="track"><svg class="track-icon"><use href="#icon"/></svg></div>
         <ol class="stops">
-          <li>Tower</li>
-          <li>In flight</li>
-          <li>Landed</li>
+          <li></li>
+          <li></li>
+          <li></li>
         </ol>
       </div>
       <p id="status" class="status" role="status"></p>
     </section>
 
-    <section id="tower" class="tower-panel" hidden>
-      <div class="tower-head">
-        <h2>Control Tower</h2>
-        <button id="tower-exit" class="link" type="button">← Back</button>
+    <section id="admin" class="admin-panel" hidden>
+      <div class="admin-head">
+        <h2 data-text="adminTitle"></h2>
+        <button id="admin-exit" class="link" type="button">← Back</button>
       </div>
 
-      <div id="tower-auth">
+      <div id="admin-auth">
         <button id="sign-in" type="button">Sign in with Google</button>
       </div>
-      <p id="tower-msg" class="tower-msg"></p>
+      <p id="admin-msg" class="admin-msg"></p>
 
-      <div id="tower-controls" hidden>
-        <div class="airspace" data-open="true">
+      <div id="admin-controls" hidden>
+        <div class="switch" data-open="true">
           <div>
-            <span class="airspace-label">Airspace</span>
-            <span id="airspace-state" class="airspace-state">OPEN</span>
+            <span class="switch-label" data-text="switchLabel"></span>
+            <span id="switch-state" class="switch-state"></span>
           </div>
-          <button id="toggle" type="button">Close airspace</button>
+          <button id="toggle" type="button"></button>
         </div>
 
-        <h3>Departures</h3>
+        <label class="theme-picker">
+          <span class="switch-label">Theme</span>
+          <select id="theme-select"></select>
+        </label>
+
+        <h3 data-text="boardTitle"></h3>
         <div class="board-wrap">
           <table class="board">
-            <thead><tr><th>Time</th><th>Callsign</th><th>Status</th><th>Track</th></tr></thead>
+            <thead><tr><th>Time</th><th>Name</th><th>Status</th><th>Track</th></tr></thead>
             <tbody id="board"></tbody>
           </table>
         </div>
@@ -117,6 +105,8 @@
     </section>
   </main>
 
-  <script type="module" src="app.js?v=20261005201116"></script>
+  <!-- theme.js runs first so the page is themed before Firebase finishes loading. -->
+  <script type="module" src="theme.js?v=20261030135055"></script>
+  <script type="module" src="app.js?v=20261030135055"></script>
 </body>
 </html>

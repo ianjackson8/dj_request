@@ -6,7 +6,7 @@
 set -e
 cd "$(dirname "$0")/../docs"
 v=$(date +%Y%m%d%H%M%S)
-perl -pi -e "s/\\?v=\\d+/?v=$v/g" index.html app.js
+perl -pi -e "s/\\?v=\\d+/?v=$v/g" index.html app.js theme.js
 perl -pi -e "s/^const APP_VERSION = \"\\d+\";/const APP_VERSION = \"$v\";/" app.js
 printf '{ "version": "%s" }\n' "$v" > version.json
 echo "stamped version $v"

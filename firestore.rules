@@ -1,10 +1,11 @@
 rules_version = '2';
 
-// Guests can create a well-formed pending request while the airspace is open,
+// Guests can create a well-formed pending request while requests are open,
 // and read back a request by its id (to see its status). Admins (Google
 // accounts given the `admin` claim via `dj_helper.py --grant-admin`) can open
-// or close the airspace and list requests. The laptop helper uses a service
-// account, which bypasses these rules.
+// or pause requests and list them. The laptop helper uses a service
+// account, which bypasses these rules. The state doc also holds the site's
+// theme, which only admins can change.
 //
 // Note: `service` is a reserved word in rules, so the field is `platform`.
 // In the regexes, [.] is a literal dot and [^ ] is any non-space character.
@@ -49,8 +50,10 @@ service cloud.firestore {
     match /config/state {
       allow read: if true;
       allow write: if isAdmin()
-        && request.resource.data.keys().hasOnly(['accepting', 'updatedAt', 'updatedBy'])
-        && request.resource.data.accepting is bool;
+        && request.resource.data.keys().hasOnly(['accepting', 'theme', 'updatedAt', 'updatedBy'])
+        && request.resource.data.accepting is bool
+        && (!('theme' in request.resource.data)
+            || (request.resource.data.theme is string && request.resource.data.theme.size() <= 40));
     }
 
     match /requests/{requestId} {
